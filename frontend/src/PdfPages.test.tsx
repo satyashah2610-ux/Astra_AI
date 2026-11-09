@@ -26,3 +26,11 @@ it('shows the signature box locations before the PDF has loaded', () => {
   render(<PdfPages source={source} marks={marks} pageCount={2} signature="data:image/png;base64,AAAA" />);
   expect(screen.getByRole('img', { name: 'Your signature' })).toBeInTheDocument();
 });
+
+it('shows company comments as notes and the signer’s own layer on each page', () => {
+  const comments = [{ id: 'c1', page: 2, x: .5, y: .1, width: .2, height: .05, text: 'Tick your plan here' }];
+  render(<PdfPages source={source} marks={marks} pageCount={2} comments={comments} renderOverlay={page => <span>Layer for page {page}</span>} />);
+  expect(screen.getByLabelText('Page 2 of 2')).toHaveTextContent('Tick your plan here');
+  expect(screen.getByText('Layer for page 1')).toBeInTheDocument();
+  expect(screen.getByText('Layer for page 2')).toBeInTheDocument();
+});

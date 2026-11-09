@@ -1,12 +1,14 @@
 import { request, requestFile, type Mark } from './api';
+import type { Comment } from './PdfPages';
+import type { SignerItem } from './items';
 
 export type SigningStatus = 'sent' | 'viewed' | 'signed';
 export type SigningView = {
-  document_name: string; signer_name: string; page_count: number; marks: Mark[];
+  document_name: string; signer_name: string; page_count: number; marks: Mark[]; comments?: Comment[];
   status: SigningStatus; sent_at: string; signed_at: string | null; consent_text: string;
 };
 export type Signature = { method: 'typed' | 'drawn'; image: string };
-export type Submission = Signature & { name: string; consent: true };
+export type Submission = Signature & { name: string; consent: true; items?: SignerItem[]; initials?: Signature; utc_offset_minutes?: number };
 
 const SIGN_PATH = /^\/sign\/?$/;
 const TOKEN = /^#([A-Za-z0-9_-]{20,})$/;

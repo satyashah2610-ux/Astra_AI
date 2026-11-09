@@ -6,6 +6,7 @@ appears in server access logs.
 import hashlib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -15,6 +16,7 @@ from .lifecycle import FileStatus, can_transition
 from .models import SignSubmission
 from .signatures import SignatureImageError, decode_signature_png
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
+from .signed_pdf import mark_type
 from .storage import Storage, utc_now
 from .tokens import hash_token
 
@@ -25,13 +27,20 @@ CONSENT_TEXT = ("I agree to sign this agreement electronically. I understand tha
 INVALID_LINK = "This signing link is invalid or has been replaced. Ask the sender for a new link."
 
 
+def signing_date(utc_offset_minutes: int) -> str:
+    """The signing date as the signer's calendar shows it, e.g. '09 Nov 2026'."""
+    return (datetime.now(timezone.utc) + timedelta(minutes=utc_offset_minutes)).strftime("%d %b %Y")
+
+
 def signer_view(row) -> dict:
     """What the signer may see. No email, internal title, IDs or token data."""
+    marks = json.loads(row["marks"])
     return {
         "document_name": row["document_name"],
         "signer_name": row["signer_name"],
         "page_count": row["page_count"],
-        "marks": json.loads(row["marks"]),
+        "marks": [m for m in marks if mark_type(m) == "signature"],
+        "comments": [{key: m[key] for key in ("id", "page", "x", "y", "width", "height", "text")} for m in marks if mark_type(m) == "comment"],
         "status": row["status"],
         "sent_at": row["sent_at"],
         "signed_at": row["signed_at"],
@@ -84,32 +93,45 @@ def create_signing_router(storage: Storage) -> APIRouter:
     def sign(body: SignSubmission, request: Request, x_signing_token: str | None = Header(default=None)):
         try:
             image = decode_signature_png(body.image)
+            initials = decode_signature_png(body.initials.image) if body.initials else None
         except SignatureImageError as exc:
             raise HTTPException(422, str(exc)) from exc
         ip, user_agent = request_origin(request)
-        target = None
+        target = initials_target = None
         try:
             with storage.database() as db:
                 db.execute("BEGIN IMMEDIATE")  # two clicks or two tabs: exactly one signature
                 row = lookup(db, x_signing_token)
                 if not can_transition(row["status"], FileStatus.SIGNED):
                     raise HTTPException(409, "This agreement has already been signed.")
+                if any(item.page > row["page_count"] for item in body.items):
+                    raise HTTPException(422, "An item is on a page that isn't in this document.")
                 target = storage.signature_png(row["id"])
                 target.write_bytes(image)
+                if initials is not None:
+                    initials_target = storage.initials_png(row["id"])
+                    initials_target.write_bytes(initials)
                 now = utc_now()
                 db.execute("""INSERT INTO signatures (file_id, method, name, image_sha256, consent_text, signed_at, ip, user_agent)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                            (row["id"], body.method, body.name, hashlib.sha256(image).hexdigest(), CONSENT_TEXT, now, ip, user_agent))
+                db.execute("""INSERT INTO signer_items (file_id, items, initials_method, initials_sha256, date_text)
+                              VALUES (?, ?, ?, ?, ?)""",
+                           (row["id"], json.dumps([item.model_dump(exclude_none=True) for item in body.items]),
+                            body.initials.method if body.initials else None,
+                            hashlib.sha256(initials).hexdigest() if initials is not None else None,
+                            signing_date(body.utc_offset_minutes)))
                 db.execute("""UPDATE files SET status = ?, signed_at = ?, updated_at = ?, version = version + 1
                               WHERE id = ? AND status IN (?, ?)""",
                            (FileStatus.SIGNED, now, now, row["id"], FileStatus.SENT, FileStatus.VIEWED))
                 record_event(db, row["id"], "signed", request, now)
                 signed = signer_view(reload(db, row["id"]))
         except BaseException:
-            if target is not None:
-                target.unlink(missing_ok=True)
+            for written in (target, initials_target):
+                if written is not None:
+                    written.unlink(missing_ok=True)
             raise
-        logger.info("File signed id=%s method=%s", row["id"], body.method)
+        logger.info("File signed id=%s method=%s items=%s", row["id"], body.method, len(body.items))
         try:
             ensure_signed_pdf(storage, row["id"])  # build now; a failure is retried on the first download
         except Exception:

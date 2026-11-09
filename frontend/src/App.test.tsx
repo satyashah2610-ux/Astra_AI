@@ -156,3 +156,12 @@ it('keeps the once-only signing link when staff switch to Agreements and back', 
   await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${window.location.origin}/sign#secret-shown-once`);
 });
+
+it('counts only signature boxes as signature fields', async () => {
+  records = [{ ...agreement, marks: [{ id: 's', page: 1, x: .1, y: .6, width: .3, height: .1 }, { id: 't', page: 1, x: .1, y: .1, width: .3, height: .03, type: 'text', text: 'Fee' }, { id: 'c', page: 1, x: .5, y: .1, width: .3, height: .05, type: 'comment', text: 'Tick' }] },
+             { ...agreement, id: 'notes', name: 'Notes only', marks: [{ id: 'c', page: 1, x: .5, y: .1, width: .3, height: .05, type: 'comment', text: 'Tick' }] }];
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  expect(screen.getByText('1 signature field')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Notes only/ })).toHaveTextContent('Draft');
+});

@@ -1,4 +1,5 @@
 import { request, type Agreement } from './api';
+import { isSignatureMark } from './items';
 
 export type FileStatus = 'draft' | 'sent' | 'viewed' | 'signed';
 export type FileItem = {
@@ -26,7 +27,7 @@ export function signingUrl(origin: string, signingPath: string): string {
 
 /** An agreement can be sent only once it has at least one signature box. */
 export function sendable(agreement: Agreement): boolean {
-  return agreement.marks.length > 0;
+  return agreement.marks.some(isSignatureMark);
 }
 
 /** Values as they should be stored: text trimmed. */

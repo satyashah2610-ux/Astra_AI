@@ -110,3 +110,40 @@ a.primary,a.secondary{display:inline-flex;align-items:center;justify-content:cen
 @media(max-width:850px){.files-workspace{grid-template-columns:1fr}.files-workspace .library{border-right:0;border-bottom:1px solid var(--line)}.file-list{max-height:240px}.file-detail{padding:20px 18px}}
 @media(max-width:600px){.files-workspace{display:flex;flex-direction:column}.files-toolbar{justify-content:stretch}.files-toolbar button{flex:1}.link-row{flex-direction:column}.form-actions button{flex:1}.file-card-header{flex-direction:column}}
 @media(max-width:600px){.files-workspace .library .search{display:flex}}
+/* Company text and comments in the template editor */
+.signature-field.kind-text{border:1.5px dashed #8b9bb8;background:#eef2fa99;color:#111;justify-content:flex-start;align-items:center;padding:0 3px;overflow:hidden}
+.signature-field.kind-text.selected{border-style:solid;border-color:#566b93;background:#e4eaf6b3}
+.mark-text{font-family:Helvetica,Arial,sans-serif;line-height:1.15;white-space:pre-wrap;overflow:hidden;color:#111;text-align:left}
+.signature-field.kind-comment{border:1.5px solid #e2c36b;background:#fff6d6ee;color:#7a5a12;justify-content:flex-start;align-items:flex-start;padding:4px 6px;gap:5px;font-size:11px;line-height:1.35;overflow:hidden;box-shadow:0 2px 6px #b8902a26}
+.signature-field.kind-comment.selected{border-color:#c49b2c}
+.mark-note{white-space:pre-wrap!important;overflow:hidden;text-overflow:clip!important}
+.mark-text-field{margin:8px 0 14px}
+.mark-text-field label,.form-label{font-size:11px;font-weight:600;color:#425a49}
+.mark-text-field textarea{border:1px solid #d7dfd5;border-radius:6px;padding:8px 10px;font:12px 'DM Sans',Arial,sans-serif;color:var(--ink);resize:vertical;min-height:64px}
+.mark-text-field textarea:focus-visible{outline:3px solid #92bca8;outline-offset:1px}
+/* Signing page: the company's notes and the signer's own items */
+.company-note{position:absolute;z-index:2;display:flex;align-items:flex-start;gap:5px;padding:5px 7px;border:1.5px solid #e2c36b;background:#fff6d6f2;color:#6e5010;border-radius:4px;font-size:11px;line-height:1.35;overflow:auto;box-shadow:0 2px 8px #b8902a2e;pointer-events:none}
+.company-note svg{flex-shrink:0;margin-top:1px}
+.item-tools{position:sticky;top:8px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 auto 14px;max-width:820px;width:100%;padding:8px 10px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 2px 8px #21362b14}
+.item-tools-label{font-size:11px;font-weight:650;color:#425a49;margin-right:4px}
+.item-tools button{display:inline-flex;align-items:center;gap:5px;border:1px solid #d7dfd5;background:#fff;border-radius:6px;padding:6px 9px;font-size:12px;color:#2f4a3c}
+.item-tools button:hover:not(:disabled){background:#f0f5ed}
+.item-tools button[aria-pressed=true]{background:#2f5a45;border-color:#2f5a45;color:#fff}
+.item-tools-hint{flex-basis:100%;font-size:11px;color:#7a857d}
+.signer-layer{position:absolute;inset:0;z-index:3}
+.signer-layer.placing{cursor:crosshair;touch-action:none}
+.signer-item{position:absolute;display:flex;align-items:center;justify-content:center;color:#1d2c4d;border:1px dashed transparent;border-radius:3px;cursor:move;touch-action:none;user-select:none}
+.signer-item:hover,.signer-item:focus-visible{border-color:#7f93b8}
+.signer-item.selected{border:1.5px solid #3d5f93;background:#eef3fb66}
+.signer-item span{font-family:Helvetica,Arial,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1}
+.signer-item.name,.signer-item.date{justify-content:flex-start;padding:0 2px}
+.signer-item img{max-width:100%;max-height:100%;object-fit:contain;pointer-events:none}
+.signer-item .dot-mark{width:60%;height:60%;border-radius:50%;background:#1d2c4d}
+.signer-item.text{background:#fffef4cc;border-color:#c9b77a}
+.signer-item.text input{width:100%;height:100%;border:0;background:transparent;font-family:Helvetica,Arial,sans-serif;color:#1d2c4d;padding:0 3px;outline:none;min-width:0}
+.signer-item .item-placeholder{display:inline-flex;align-items:center;gap:4px;color:#7f93b8;font-family:'DM Sans',Arial,sans-serif}
+.item-remove{position:absolute;top:-10px;right:-10px;width:20px;height:20px;border-radius:50%;border:1px solid #d9b8a8;background:#fff;color:#a94437;padding:0;z-index:2}
+.item-resize{position:absolute;right:-5px;bottom:-5px;width:10px;height:10px;background:#fff;border:1.5px solid #3d5f93;border-radius:2px;cursor:nwse-resize}
+.initials-section{display:flex;flex-direction:column;gap:8px}
+.sign-todo{margin:0;padding:10px 12px 10px 28px;background:#fdf5e6;border:1px solid #f1dfb9;border-radius:7px;font-size:12px;color:#7a5414;line-height:1.6}
+@media(max-width:600px){.item-tools{top:4px;padding:6px}.item-tools button{padding:6px 7px;font-size:11px}.item-tools-label{flex-basis:100%}}

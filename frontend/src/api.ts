@@ -1,5 +1,7 @@
 import type { Box } from './geometry';
-export type Mark = Box & { id: string; page: number };
+export type MarkType = 'signature' | 'text' | 'comment';
+/** A template item: a signature box for the client, company text (printed when sent) or a comment (shown to the client, never printed). */
+export type Mark = Box & { id: string; page: number; type?: MarkType; text?: string };
 export type Agreement = { id: string; name: string; filename: string; page_count: number; marks: Mark[]; version: number; created_at: string; updated_at: string };
 
 /** Fetch, turning network failures and error responses into Errors with the server's message. */

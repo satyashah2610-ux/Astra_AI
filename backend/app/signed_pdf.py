@@ -13,12 +13,15 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 EVENT_LABELS = {"created": "Created", "sent": "Sent", "link_reissued": "Link reissued", "viewed": "Viewed", "signed": "Signed"}
 METHOD_LABELS = {"typed": "Typed", "drawn": "Drawn"}
 SIGNATURE_MAX_WIDTH, SIGNATURE_MAX_HEIGHT = 2.2 * inch, 0.9 * inch  # signature on the certificate page
+SIGNER_INK, COMPANY_INK = "#1d2c4d", "#111111"
+TEXT_FONT = "Helvetica"
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,23 @@ class Certificate:
     user_agent: str | None
     events: list
     generated_at: str
+    signer_items: tuple = ()
+
+
+@dataclass(frozen=True)
+class Stamp:
+    """One thing to draw in a box on a page: an image (signature, initials), text, a tick or a dot."""
+    kind: str  # "image" | "text" | "check" | "dot"
+    page: int
+    box: dict  # x, y, width, height as fractions of the displayed page
+    image: bytes | None = None
+    text: str | None = None
+    ink: str = SIGNER_INK
+
+
+def mark_type(mark: dict) -> str:
+    """Template marks saved before text and comments existed have no type: they are signature boxes."""
+    return mark.get("type") or "signature"
 
 
 # --- coordinates ------------------------------------------------------------------------------------
@@ -74,25 +94,117 @@ def page_box(page) -> tuple[float, float, float, float]:
 
 # --- stamping ---------------------------------------------------------------------------------------
 
-def stamp_page(page, marks, signature_png: bytes) -> None:
-    """Draw the signature upright inside each box, as the viewer will display the page."""
+def wrap(text: str, size: float, width: float) -> list[str]:
+    """Greedy word wrap for Helvetica at `size`; words longer than the line are split."""
+    lines: list[str] = []
+    for paragraph in text.splitlines() or [""]:
+        line = ""
+        for word in paragraph.split(" "):
+            candidate = f"{line} {word}" if line else word
+            if stringWidth(candidate, TEXT_FONT, size) <= width:
+                line = candidate
+                continue
+            if line:
+                lines.append(line)
+            while stringWidth(word, TEXT_FONT, size) > width and len(word) > 1:
+                cut = max(1, next((i for i in range(len(word), 0, -1) if stringWidth(word[:i], TEXT_FONT, size) <= width), 1))
+                lines.append(word[:cut])
+                word = word[cut:]
+            line = word
+        lines.append(line)
+    return lines
+
+
+def draw_text(overlay, text: str, width: float, height: float, ink: str) -> None:
+    """Text inside a width x height box: wrapped, shrunk until it fits, centred vertically."""
+    pad = min(2.0, width * 0.05, height * 0.1)
+    size = max(4.0, min(height * 0.7, 14.0))
+    while True:
+        lines = wrap(text, size, width - 2 * pad)
+        if len(lines) * size * 1.2 <= height - pad or size <= 4.0:
+            break
+        size -= 0.5
+    block = len(lines) * size * 1.2
+    baseline = height - (height - block) / 2 - size  # first line, block centred in the box
+    overlay.setFillColor(colors.HexColor(ink))
+    overlay.setFont(TEXT_FONT, size)
+    for line in lines:
+        overlay.drawString(pad, baseline, line)
+        baseline -= size * 1.2
+
+
+def draw_check(overlay, width: float, height: float, ink: str) -> None:
+    side = min(width, height) * 0.9
+    ox, oy = (width - side) / 2, (height - side) / 2
+    overlay.setStrokeColor(colors.HexColor(ink))
+    overlay.setLineWidth(max(0.8, side * 0.12))
+    overlay.setLineCap(1)
+    overlay.setLineJoin(1)
+    path = overlay.beginPath()
+    path.moveTo(ox + side * .15, oy + side * .5)
+    path.lineTo(ox + side * .4, oy + side * .22)
+    path.lineTo(ox + side * .88, oy + side * .82)
+    overlay.drawPath(path, stroke=1, fill=0)
+
+
+def draw_dot(overlay, width: float, height: float, ink: str) -> None:
+    overlay.setFillColor(colors.HexColor(ink))
+    overlay.circle(width / 2, height / 2, min(width, height) * 0.3, stroke=0, fill=1)
+
+
+def stamp_page(page, stamps: list[Stamp]) -> None:
+    """Draw each stamp upright inside its box, as the viewer will display the page."""
     cropbox, rotation = page_box(page), normalize_rotation(page.rotation)
     llx, lly, urx, ury = cropbox
     width, height = (urx - llx, ury - lly) if rotation in (0, 180) else (ury - lly, urx - llx)
     stream = BytesIO()
     overlay = canvas.Canvas(stream, pagesize=(max(float(page.mediabox.right), 1.0), max(float(page.mediabox.top), 1.0)))
-    image = ImageReader(BytesIO(signature_png))  # decoded once, reused for every box
-    for mark in marks:
+    images: dict[bytes, ImageReader] = {}  # each image decoded once, reused for every box
+    for stamp in stamps:
+        box = stamp.box
+        w, h = box["width"] * width, box["height"] * height
         # Anchor at the box's displayed bottom-left corner, in a frame turned against the page rotation.
-        x, y = display_point(mark["x"], mark["y"] + mark["height"], cropbox, rotation)
+        x, y = display_point(box["x"], box["y"] + box["height"], cropbox, rotation)
         overlay.saveState()
         overlay.translate(x, y)
         overlay.rotate(rotation)
-        overlay.drawImage(image, 0, 0, mark["width"] * width, mark["height"] * height,
-                          mask="auto", preserveAspectRatio=True, anchor="c")
+        if stamp.kind == "image":
+            reader = images.get(stamp.image)
+            if reader is None:
+                reader = images[stamp.image] = ImageReader(BytesIO(stamp.image))
+            overlay.drawImage(reader, 0, 0, w, h, mask="auto", preserveAspectRatio=True, anchor="c")
+        elif stamp.kind == "text":
+            draw_text(overlay, stamp.text or "", w, h, stamp.ink)
+        elif stamp.kind == "check":
+            draw_check(overlay, w, h, stamp.ink)
+        elif stamp.kind == "dot":
+            draw_dot(overlay, w, h, stamp.ink)
+        else:
+            raise ValueError(f"Unknown stamp kind: {stamp.kind}")
         overlay.restoreState()
     overlay.save()
     page.merge_page(PdfReader(stream).pages[0])
+
+
+def apply_stamps(writer: PdfWriter, stamps: list[Stamp]) -> None:
+    for number, page in enumerate(writer.pages, start=1):
+        on_page = [stamp for stamp in stamps if stamp.page == number]
+        if on_page:
+            stamp_page(page, on_page)
+
+
+def print_text_marks(original: bytes, marks: list) -> bytes:
+    """The document as sent: company text printed onto it. Comments and signature boxes are not printed."""
+    stamps = [Stamp(kind="text", page=mark["page"], box=mark, text=mark["text"], ink=COMPANY_INK)
+              for mark in marks if mark_type(mark) == "text"]
+    if not stamps:
+        return original
+    writer = PdfWriter()
+    writer.append(PdfReader(BytesIO(original)))
+    apply_stamps(writer, stamps)
+    stream = BytesIO()
+    writer.write(stream)
+    return stream.getvalue()
 
 
 # --- certificate --------------------------------------------------------------------------------------
@@ -131,6 +243,15 @@ def certificate_page(certificate: Certificate, signature_png: bytes) -> bytes:
     timeline.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, -1), 0.4, line),
                                   ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
 
+    completed = []
+    if certificate.signer_items:
+        items = Table([[text("Page", label), text("Item", label), text("Value", label)]]
+                      + [[text(page), text(kind), text(value)] for page, kind, value in certificate.signer_items],
+                      colWidths=[0.7 * inch, 1.5 * inch, 4.6 * inch], repeatRows=1)
+        items.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LINEBELOW", (0, 0), (-1, -1), 0.4, line),
+                                   ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        completed = [Paragraph("Completed by the signer", heading), items]
+
     story = [
         Paragraph("Certificate of completion", title),
         text(f"Astra Sign · generated {utc(certificate.generated_at)}", label),
@@ -144,6 +265,7 @@ def certificate_page(certificate: Certificate, signature_png: bytes) -> bytes:
                  ("Signed as", text(certificate.signature_name)), ("Method", text(METHOD_LABELS.get(certificate.method, certificate.method))),
                  ("Signature", signature), ("Signed at", text(utc(certificate.signed_at))),
                  ("IP address", text(certificate.ip)), ("Browser", text(certificate.user_agent))]),
+        *completed,
         Paragraph("Consent to sign electronically", heading),
         text(f"“{certificate.consent_text}”"),
         Paragraph("Timeline", heading),
@@ -160,13 +282,12 @@ def certificate_page(certificate: Certificate, signature_png: bytes) -> bytes:
 
 # --- whole document ------------------------------------------------------------------------------------
 
-def build_signed_pdf(original: bytes, marks: list, signature_png: bytes, certificate: Certificate) -> bytes:
+def build_signed_pdf(original: bytes, marks: list, signature_png: bytes, certificate: Certificate, stamps=()) -> bytes:
+    """Signature into every signature box, plus the signer's own items, then the certificate page."""
     writer = PdfWriter()
     writer.append(PdfReader(BytesIO(original)))
-    for number, page in enumerate(writer.pages, start=1):
-        page_marks = [mark for mark in marks if mark["page"] == number]
-        if page_marks:
-            stamp_page(page, page_marks, signature_png)
+    boxes = [Stamp(kind="image", page=mark["page"], box=mark, image=signature_png) for mark in marks if mark_type(mark) == "signature"]
+    apply_stamps(writer, boxes + list(stamps))
     writer.append(PdfReader(BytesIO(certificate_page(certificate, signature_png))))
     writer.add_metadata({"/Title": f"{certificate.document_name} (signed)", "/Producer": "Astra Sign"})
     stream = BytesIO()

@@ -39,6 +39,13 @@ SCHEMA = (
         name TEXT NOT NULL, image_sha256 TEXT NOT NULL, consent_text TEXT NOT NULL,
         signed_at TEXT NOT NULL, ip TEXT, user_agent TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS signer_items (
+        file_id TEXT PRIMARY KEY,
+        items TEXT NOT NULL DEFAULT '[]',
+        initials_method TEXT CHECK (initials_method IN ('typed', 'drawn')),
+        initials_sha256 TEXT,
+        date_text TEXT NOT NULL
+    )""",
 )
 
 
@@ -87,6 +94,9 @@ class Storage:
 
     def signature_png(self, file_id: str) -> Path:
         return self.signatures / f"{file_id}.png"
+
+    def initials_png(self, file_id: str) -> Path:
+        return self.signatures / f"{file_id}-initials.png"
 
     def signed_pdf(self, file_id: str) -> Path:
         return self.signed / f"{file_id}.pdf"

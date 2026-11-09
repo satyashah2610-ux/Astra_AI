@@ -4,7 +4,7 @@ import { clamp, type Point } from './geometry';
 import { hasInk } from './strokes';
 import type { Signature } from './signing';
 
-type Props = { name: string; onChange: (signature: Signature | null) => void };
+type Props = { name: string; onChange: (signature: Signature | null) => void; label?: 'signature' | 'initials' };
 const PAD = { width: 600, height: 200 };
 const TYPED = { width: 600, height: 160 };
 const SCRIPT_FONT = '"Caveat", "Segoe Script", "Brush Script MT", cursive';
@@ -26,7 +26,7 @@ export async function renderTypedSignature(name: string): Promise<string | null>
 }
 
 /** Type or draw a signature. Reports a PNG data URL, or null until the signature is usable. */
-export default function SignaturePad({ name, onChange }: Props) {
+export default function SignaturePad({ name, onChange, label = 'signature' }: Props) {
   const [mode, setMode] = useState<'typed' | 'drawn'>('typed');
   const [strokes, setStrokes] = useState<Point[][]>([]);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -95,9 +95,9 @@ export default function SignaturePad({ name, onChange }: Props) {
       <button role="tab" aria-selected={mode === 'drawn'} onClick={() => choose('drawn')}><PenTool size={14} />Draw</button>
     </div>
     {mode === 'typed'
-      ? <div className="typed-preview" aria-label="Signature preview">{name.trim() ? <span>{name.trim()}</span> : <small>Enter your full name above</small>}</div>
+      ? <div className="typed-preview" aria-label={label === 'signature' ? 'Signature preview' : 'Initials preview'}>{name.trim() ? <span>{name.trim()}</span> : <small>Enter your full name above</small>}</div>
       : <div className="draw-area">
-        <canvas ref={canvas} width={PAD.width} height={PAD.height} aria-label="Draw your signature" data-testid="signature-canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+        <canvas ref={canvas} width={PAD.width} height={PAD.height} aria-label={`Draw your ${label}`} data-testid={`${label}-canvas`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
         <span className="draw-line" aria-hidden="true" />
         {strokes.length === 0 && <small className="draw-hint">Sign here with your mouse, finger or stylus</small>}
         <button className="text-button clear-pad" onClick={clear} disabled={strokes.length === 0}><Eraser size={13} />Clear</button>

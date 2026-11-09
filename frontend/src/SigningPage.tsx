@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, CheckCircle2, Download, FileWarning, Loader2, Lock, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ArrowDown, Check, CheckCircle2, Circle, Download, FileWarning, Loader2, Lock, Signature as SignatureIcon, Sparkles, Type, UserRound, CalendarDays, CaseSensitive } from 'lucide-react';
 import { saveFile } from './api';
 import PdfPages from './PdfPages';
 import SignaturePad from './SignaturePad';
+import SignerLayer from './SignerLayer';
+import { formatSigningDate, initialsFrom, itemsReady, ITEM_LABELS, ITEM_TOOLS, type ItemType, type SignerItem } from './items';
 import { signingApi, type Signature, type SigningView } from './signing';
 
+const TOOL_ICONS: Record<ItemType, ReactNode> = {
+  check: <Check size={14} />, dot: <Circle size={12} fill="currentColor" />, text: <Type size={14} />, name: <UserRound size={14} />,
+  date: <CalendarDays size={14} />, initials: <CaseSensitive size={14} />, signature: <SignatureIcon size={14} />,
+};
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) : '';
 
 /** Public page a client opens from their signing link. No account needed. */
@@ -21,6 +27,13 @@ export default function SigningPage({ token }: { token: string }) {
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
   const viewed = useRef(false);
+  const [items, setItems] = useState<SignerItem[]>([]);
+  const [tool, setTool] = useState<ItemType | null>(null);
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [initials, setInitials] = useState<Signature | null>(null);
+  const today = formatSigningDate(new Date());  // per render, so a page left open past midnight shows the date the server will print
+  const needsInitials = items.some(item => item.type === 'initials');
 
   useEffect(() => {
     let live = true;
@@ -36,12 +49,19 @@ export default function SigningPage({ token }: { token: string }) {
     return () => { live = false; };
   }, [api]);
 
-  const ready = Boolean(name.trim() && signature && consent && !busy);
+  const textFilled = itemsReady(items);
+  const ready = Boolean(name.trim() && signature && consent && !busy && textFilled && (!needsInitials || initials));
   async function submit() {
     if (!ready || !signature) return;
     setBusy(true); setError('');
     try {
-      setView(await api.submit({ name: name.trim(), method: signature.method, image: signature.image, consent: true }));
+      setView(await api.submit({
+        name: name.trim(), method: signature.method, image: signature.image, consent: true,
+        // Name and date values are filled in by the server; only text items carry text.
+        items: items.map(({ id, type, page, x, y, width, height, text }) => ({ id, type, page, x, y, width, height, ...(type === 'text' ? { text: text?.trim() } : {}) })),
+        ...(needsInitials && initials ? { initials } : {}),
+        utc_offset_minutes: -new Date().getTimezoneOffset(),
+      }));
       setJustSigned(true);
       document.querySelector('.signing-shell')?.scrollIntoView?.({ block: 'start' });
     } catch (e) { setError(e instanceof Error ? e.message : 'Your signature could not be saved. Try again.'); }
@@ -54,6 +74,12 @@ export default function SigningPage({ token }: { token: string }) {
     catch (e) { setDownloadError(e instanceof Error ? e.message : 'The signed copy could not be downloaded. Try again.'); }
     finally { setDownloading(false); }
   }
+  function addItem(item: SignerItem) {
+    setItems(current => [...current, item]); setSelectedItem(item.id); setTool(null);
+    setFocusId(item.type === 'text' ? item.id : null);
+  }
+  function changeItem(item: SignerItem) { setItems(current => current.map(existing => existing.id === item.id ? item : existing)); }
+  function removeItem(id: string) { setItems(current => current.filter(item => item.id !== id)); setSelectedItem(null); }
   function goToBox() {
     const first = view?.marks[0];
     if (first) document.getElementById(`sign-box-${first.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -76,7 +102,15 @@ export default function SigningPage({ token }: { token: string }) {
   return <div className="signing-shell">{header}
     <main className="signing-layout">
       <section className="signing-document" aria-label="Agreement to sign">
-        <PdfPages source={api.pdf} marks={view.marks} pageCount={view.page_count} signature={signature?.image} />
+        <div className="item-tools" role="toolbar" aria-label="Add to the document">
+          <span className="item-tools-label">Add to the document</span>
+          {ITEM_TOOLS.map(({ type, label }) => <button key={type} aria-pressed={tool === type} disabled={busy} onClick={() => setTool(current => current === type ? null : type)}>{TOOL_ICONS[type]}{label}</button>)}
+          <span className="item-tools-hint" role="status">{tool ? `Tap the page where the ${ITEM_LABELS[tool].toLowerCase()} should go.` : 'Pick one, then tap the page. Drag to move; × to remove.'}</span>
+        </div>
+        <PdfPages source={api.pdf} marks={view.marks} comments={view.comments ?? []} pageCount={view.page_count} signature={signature?.image}
+          renderOverlay={(page, size) => <SignerLayer page={page} size={size} items={items.filter(item => item.page === page)} tool={tool} selected={selectedItem} focusId={focusId}
+            values={{ name, date: today, signature: signature?.image, initials: initials?.image }} disabled={busy}
+            onAdd={addItem} onChange={changeItem} onRemove={removeItem} onSelect={setSelectedItem} />} />
       </section>
       <aside className="signing-panel">
         <div className="eyebrow">SIGNATURE REQUESTED</div>
@@ -86,7 +120,12 @@ export default function SigningPage({ token }: { token: string }) {
         <div className="field-divider" />
         <label className="form-field"><span>Full name</span><input value={name} onChange={e => setName(e.target.value)} maxLength={200} autoComplete="name" disabled={busy} /></label>
         <SignaturePad name={name} onChange={setSignature} />
+        {needsInitials && <section className="initials-section" aria-label="Your initials"><span className="form-label">Your initials</span><SignaturePad name={initialsFrom(name)} onChange={setInitials} label="initials" /></section>}
         <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} disabled={busy} /><span>{view.consent_text}</span></label>
+        {(!textFilled || (needsInitials && !initials)) && <ul className="sign-todo">
+          {!textFilled && <li>Type something in each text box, or remove it.</li>}
+          {needsInitials && !initials && <li>Adopt your initials above.</li>}
+        </ul>}
         {error && <div className="error-banner" role="alert">{error}</div>}
         <button className="primary sign-button" disabled={!ready} onClick={() => void submit()}>{busy ? <Loader2 className="spin" size={15} /> : <CheckCircle2 size={15} />}Sign agreement</button>
       </aside>

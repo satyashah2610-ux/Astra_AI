@@ -144,8 +144,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             db.execute("BEGIN IMMEDIATE")  # serialize against deletion so a vanished agreement gives 404, not 409
             agreement = item(db.execute("SELECT * FROM agreements WHERE id = ?", (identifier,)).fetchone())
             if any(mark.page > agreement["page_count"] for mark in body.marks):
-                raise HTTPException(422, "A signature box refers to a page that does not exist.")
-            marks = json.dumps([mark.model_dump() for mark in body.marks])
+                raise HTTPException(422, "An item on the template refers to a page that does not exist.")
+            marks = json.dumps(body.stored_marks())
             result = db.execute("UPDATE agreements SET marks = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
                                 (marks, utc_now(), identifier, body.version))
             if result.rowcount != 1:

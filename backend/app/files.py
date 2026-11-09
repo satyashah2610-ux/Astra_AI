@@ -15,6 +15,7 @@ from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
 from .models import FileCreate, FileUpdate
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
+from .signed_pdf import mark_type, print_text_marks
 from .storage import Storage, utc_now
 from .tokens import hash_token, new_token
 
@@ -31,7 +32,7 @@ def public_file(row) -> dict:
     if row is None:
         raise HTTPException(404, "File not found.")
     result = {key: row[key] for key in PUBLIC_FIELDS}
-    result["field_count"] = len(json.loads(row["marks"])) if row["marks"] else 0
+    result["field_count"] = sum(mark_type(m) == "signature" for m in json.loads(row["marks"])) if row["marks"] else 0
     return result
 
 
@@ -123,12 +124,16 @@ def create_files_router(storage: Storage) -> APIRouter:
                     raise HTTPException(409, "This file has already been sent. Reissue the link to send it again.")
                 agreement = require_agreement(db, current["agreement_id"])
                 marks = json.loads(agreement["marks"])
-                if not marks:
+                if not any(mark_type(mark) == "signature" for mark in marks):
                     raise HTTPException(409, "Add at least one signature box to the agreement before sending.")
                 source = storage.template_pdf(agreement["id"])
                 if not source.is_file():
                     raise HTTPException(422, "The agreement PDF is unavailable. Upload the agreement again.")
-                content = source.read_bytes()
+                try:
+                    content = print_text_marks(source.read_bytes(), marks)  # company text becomes part of the document
+                except Exception as exc:
+                    logger.exception("Company text could not be printed id=%s", identifier)
+                    raise HTTPException(422, "The agreement's text could not be printed on the PDF. Check the template and try again.") from exc
                 target.write_bytes(content)
                 written = True
                 now = utc_now()
@@ -136,7 +141,7 @@ def create_files_router(storage: Storage) -> APIRouter:
                               marks = ?, token_hash = ?, sent_at = ?, updated_at = ?, version = version + 1
                               WHERE id = ?""",
                            (FileStatus.SENT, agreement["name"], hashlib.sha256(content).hexdigest(), agreement["page_count"],
-                            json.dumps(marks), hash_token(token), now, now, identifier))
+                            json.dumps([m for m in marks if mark_type(m) != "text"]), hash_token(token), now, now, identifier))
                 record_event(db, identifier, "sent", at=now)
                 sent = public_file(fetch(db, identifier))
         except BaseException:

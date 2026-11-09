@@ -3,7 +3,26 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, model_validator
 
 
+PRINTED_ENCODING = "cp1252"  # what the PDF's built-in font can draw (Western European)
+MARK_TYPES = Literal["signature", "text", "comment"]
+
+
+def printable(text: str) -> str:
+    """Text that will be drawn on the PDF must use characters the PDF font can print."""
+    try:
+        text.encode(PRINTED_ENCODING)
+    except UnicodeEncodeError:
+        raise ValueError("This text uses characters the PDF can't print yet. Use letters and symbols from Western European languages.") from None
+    return text
+
+
+def check_inside_page(box, message: str) -> None:
+    if box.x + box.width > 1.000001 or box.y + box.height > 1.000001:
+        raise ValueError(message)
+
+
 class SignatureMark(BaseModel):
+    """An item on a template: a signature box for the client, company text (printed), or a comment (a note, never printed)."""
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     id: str = Field(min_length=1, max_length=100)
     page: StrictInt = Field(ge=1)
@@ -11,11 +30,20 @@ class SignatureMark(BaseModel):
     y: float = Field(ge=0, le=1)
     width: float = Field(gt=0, le=1)
     height: float = Field(gt=0, le=1)
+    type: MARK_TYPES = "signature"
+    text: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def inside_page(self):
-        if self.x + self.width > 1.000001 or self.y + self.height > 1.000001:
-            raise ValueError("Signature boxes must stay inside the PDF page.")
+    def valid_item(self):
+        check_inside_page(self, "Signature boxes must stay inside the PDF page.")
+        if self.type == "signature":
+            if self.text is not None:
+                raise ValueError("Signature boxes don't hold text.")
+            return self
+        text = (self.text or "").strip()
+        if not text:
+            raise ValueError("Text and comments can't be empty.")
+        self.text = printable(text) if self.type == "text" else text
         return self
 
 
@@ -30,7 +58,9 @@ class SaveMarks(BaseModel):
             raise ValueError("Each signature box must have a unique ID.")
         return self
 
-
+    def stored_marks(self) -> list[dict]:
+        """As stored: defaults omitted, so a plain signature box keeps its original shape (no type/text keys)."""
+        return [mark.model_dump(exclude_defaults=True) for mark in self.marks]
 
 EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -68,10 +98,60 @@ class FileUpdate(BaseModel):
 
 
 
+ITEM_TYPES = Literal["signature", "initials", "name", "date", "text", "check", "dot"]
+Image = Annotated[str, StringConstraints(min_length=1, max_length=700_000)]
+
+
+class SignerItem(BaseModel):
+    """Something the signer placed on a page. Name and date values are filled by the server, never the browser."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    id: str = Field(min_length=1, max_length=100)
+    type: ITEM_TYPES
+    page: StrictInt = Field(ge=1)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+    text: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def valid_item(self):
+        check_inside_page(self, "Items must stay inside the PDF page.")
+        if self.type != "text":
+            if self.text is not None:
+                raise ValueError("Only text items hold text.")
+            return self
+        text = (self.text or "").strip()
+        if not text:
+            raise ValueError("Text items can't be empty.")
+        self.text = printable(text)
+        return self
+
+
+class InitialsAdoption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["typed", "drawn"]
+    image: Image
+
+
 class SignSubmission(BaseModel):
-    """What the public signing page submits. The image is checked further by signatures.py."""
+    """What the public signing page submits. Images are checked further by signatures.py; pages against the document."""
     model_config = ConfigDict(extra="forbid")
     name: Name
     method: Literal["typed", "drawn"]
-    image: Annotated[str, StringConstraints(min_length=1, max_length=700_000)]
+    image: Image
     consent: Literal[True]
+    initials: InitialsAdoption | None = None
+    items: list[SignerItem] = Field(default_factory=list, max_length=200)
+    utc_offset_minutes: StrictInt = Field(default=0, ge=-840, le=840)  # the signer's time zone, for the Date item
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if len({item.id for item in self.items}) != len(self.items):
+            raise ValueError("Each item must have a unique ID.")
+        kinds = {item.type for item in self.items}
+        if "initials" in kinds and self.initials is None:
+            raise ValueError("Adopt your initials before signing.")
+        if "name" in kinds:
+            printable(self.name)  # the name is printed into a Name item
+        return self

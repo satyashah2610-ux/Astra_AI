@@ -1,18 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
-import { Loader2, PenLine } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Loader2, MessageSquare, PenLine } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import { PDF_OPTIONS } from './pdfjs';
 import { boxStyle as position } from './geometry';
 import type { Mark } from './api';
 
 type Source = { url: string; httpHeaders: Record<string, string> };
-type Props = { source: Source; marks: Mark[]; pageCount: number; signature?: string | null };
+export type Comment = { id: string; page: number; x: number; y: number; width: number; height: number; text: string };
+export type PageSize = { width: number; height: number; points: number };  // displayed px, and the page's real width in PDF points
+type Props = {
+  source: Source; marks: Mark[]; pageCount: number; signature?: string | null;
+  comments?: Comment[];  // the company's notes to the signer: shown, never printed
+  renderOverlay?: (page: number, size: PageSize) => ReactNode;  // the signer's own layer, drawn above everything else
+};
 
 /**
  * Read-only document: every page stacked, signature boxes highlighted, pages drawn as they scroll into view.
  * Every page's space is reserved from the known page count before the PDF arrives, so the layout never jumps.
  */
-export default function PdfPages({ source, marks, pageCount, signature }: Props) {
+export default function PdfPages({ source, marks, pageCount, signature, comments = [], renderOverlay }: Props) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState('');
   const [width, setWidth] = useState(640);
@@ -34,12 +40,13 @@ export default function PdfPages({ source, marks, pageCount, signature }: Props)
 
   return <div className="signing-pages" ref={container}>
     {error ? <div className="pdf-error" role="alert">{error}</div>
-      : Array.from({ length: pdf?.numPages ?? pageCount }, (_, index) => <PdfPage key={index} pdf={pdf} page={index + 1} width={width} marks={marks.filter(mark => mark.page === index + 1)} signature={signature} total={pdf?.numPages ?? pageCount} />)}
+      : Array.from({ length: pdf?.numPages ?? pageCount }, (_, index) => <PdfPage key={index} pdf={pdf} page={index + 1} width={width} marks={marks.filter(mark => mark.page === index + 1)} comments={comments.filter(note => note.page === index + 1)} renderOverlay={renderOverlay} signature={signature} total={pdf?.numPages ?? pageCount} />)}
   </div>;
 }
 
-function PdfPage({ pdf, page, width, marks, signature, total }: { pdf: PDFDocumentProxy | null; page: number; width: number; marks: Mark[]; signature?: string | null; total: number }) {
+function PdfPage({ pdf, page, width, marks, comments, renderOverlay, signature, total }: { pdf: PDFDocumentProxy | null; page: number; width: number; marks: Mark[]; comments: Comment[]; renderOverlay?: Props['renderOverlay']; signature?: string | null; total: number }) {
   const [ratio, setRatio] = useState(792 / 612);
+  const [points, setPoints] = useState(612);
   const [visible, setVisible] = useState(false);
   const [ready, setReady] = useState(false);
   const sheet = useRef<HTMLDivElement>(null);
@@ -48,7 +55,7 @@ function PdfPage({ pdf, page, width, marks, signature, total }: { pdf: PDFDocume
   useEffect(() => {
     if (!pdf) return;
     let live = true;
-    pdf.getPage(page).then(p => { if (live) { const v = p.getViewport({ scale: 1 }); setRatio(v.height / v.width); } }).catch(() => {});
+    pdf.getPage(page).then(p => { if (live) { const v = p.getViewport({ scale: 1 }); setRatio(v.height / v.width); setPoints(v.width); } }).catch(() => {});
     return () => { live = false; };
   }, [pdf, page]);
 
@@ -88,5 +95,7 @@ function PdfPage({ pdf, page, width, marks, signature, total }: { pdf: PDFDocume
     {marks.map(mark => <div key={mark.id} id={`sign-box-${mark.id}`} className={`sign-here ${signature ? 'adopted' : ''}`} style={position(mark)} data-testid="sign-here">
       {signature ? <img src={signature} alt="Your signature" /> : <><PenLine size={14} /><span>Sign here</span></>}
     </div>)}
+    {comments.map(note => <aside key={note.id} className="company-note" style={position(note)} aria-label="Note from the sender"><MessageSquare size={13} /><span>{note.text}</span></aside>)}
+    {renderOverlay?.(page, { width, height: width * ratio, points })}
   </section>;
 }

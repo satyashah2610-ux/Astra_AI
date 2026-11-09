@@ -34,6 +34,10 @@ describe('sendable and labels', () => {
     expect(sendable(agreement(1))).toBe(true);
     expect(sendable(agreement(0))).toBe(false);
   });
+  it('does not count company text or comments as signature boxes', () => {
+    const notes = { ...agreement(0), marks: [{ id: 't', page: 1, x: .1, y: .1, width: .3, height: .03, type: 'text' as const, text: 'Fee' }, { id: 'c', page: 1, x: .1, y: .2, width: .3, height: .05, type: 'comment' as const, text: 'Tick here' }] };
+    expect(sendable(notes)).toBe(false);
+  });
   it('labels every status and event', () => {
     expect(STATUS_LABELS).toEqual({ draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' });
     expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed']);
