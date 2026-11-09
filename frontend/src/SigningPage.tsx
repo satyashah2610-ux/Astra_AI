@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, CheckCircle2, FileWarning, Loader2, Lock, Sparkles } from 'lucide-react';
+import { ArrowDown, CheckCircle2, Download, FileWarning, Loader2, Lock, Sparkles } from 'lucide-react';
+import { saveFile } from './api';
 import PdfPages from './PdfPages';
 import SignaturePad from './SignaturePad';
 import { signingApi, type Signature, type SigningView } from './signing';
@@ -17,6 +18,8 @@ export default function SigningPage({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [justSigned, setJustSigned] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
   const viewed = useRef(false);
 
   useEffect(() => {
@@ -44,6 +47,13 @@ export default function SigningPage({ token }: { token: string }) {
     } catch (e) { setError(e instanceof Error ? e.message : 'Your signature could not be saved. Try again.'); }
     finally { setBusy(false); }
   }
+  async function download() {
+    if (!view) return;
+    setDownloading(true); setDownloadError('');
+    try { saveFile(await api.downloadSigned(), `${view.document_name} - signed.pdf`); }
+    catch (e) { setDownloadError(e instanceof Error ? e.message : 'The signed copy could not be downloaded. Try again.'); }
+    finally { setDownloading(false); }
+  }
   function goToBox() {
     const first = view?.marks[0];
     if (first) document.getElementById(`sign-box-${first.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -57,7 +67,9 @@ export default function SigningPage({ token }: { token: string }) {
     <CheckCircle2 size={38} />
     <h1>{justSigned ? `You’ve signed ${view.document_name}` : 'This agreement is already signed'}</h1>
     <p>Signed on {when(view.signed_at)}.{justSigned ? ' Thank you. The sender has your signed agreement.' : ''}</p>
-    <p className="muted">You can close this page.</p>
+    <button className="primary" onClick={() => void download()} disabled={downloading}>{downloading ? <Loader2 className="spin" size={15} /> : <Download size={15} />}Download signed copy</button>
+    {downloadError && <div className="error-banner" role="alert">{downloadError}</div>}
+    <p className="muted">The signed copy includes a certificate page with the signing record. You can close this page.</p>
   </main></div>;
 
   const boxes = view.marks.length;

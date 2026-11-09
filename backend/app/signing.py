@@ -14,6 +14,7 @@ from .events import record_event, request_origin
 from .lifecycle import FileStatus, can_transition
 from .models import SignSubmission
 from .signatures import SignatureImageError, decode_signature_png
+from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .storage import Storage, utc_now
 from .tokens import hash_token
 
@@ -109,6 +110,18 @@ def create_signing_router(storage: Storage) -> APIRouter:
                 target.unlink(missing_ok=True)
             raise
         logger.info("File signed id=%s method=%s", row["id"], body.method)
+        try:
+            ensure_signed_pdf(storage, row["id"])  # build now; a failure is retried on the first download
+        except Exception:
+            logger.warning("Signed PDF build deferred id=%s", row["id"], exc_info=True)
         return signed
+
+    @router.get("/signed.pdf")
+    def signed_pdf(x_signing_token: str | None = Header(default=None)):
+        with storage.database() as db:
+            row = lookup(db, x_signing_token)
+        path = ensure_signed_pdf(storage, row["id"])
+        return FileResponse(path, media_type="application/pdf", filename=signed_pdf_filename(row["document_name"]),
+                            content_disposition_type="attachment")
 
     return router

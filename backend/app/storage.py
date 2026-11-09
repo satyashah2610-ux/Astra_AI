@@ -47,19 +47,21 @@ def utc_now() -> str:
 
 
 class Storage:
-    """Owns the data directory: SQLite database, uploaded templates, sent-document snapshots and signatures."""
+    """Owns the data directory: SQLite database, uploaded templates, sent-document snapshots, signatures and signed PDFs."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
         self.uploads = self.root / "uploads"
         self.documents = self.root / "documents"
         self.signatures = self.root / "signatures"
+        self.signed = self.root / "signed"
         self.database_path = self.root / "agreements.sqlite3"
 
     def initialize(self) -> None:
         self.uploads.mkdir(parents=True, exist_ok=True)
         self.documents.mkdir(parents=True, exist_ok=True)
         self.signatures.mkdir(parents=True, exist_ok=True)
+        self.signed.mkdir(parents=True, exist_ok=True)
         with self.database() as db:
             db.execute("PRAGMA journal_mode=WAL")
             for statement in SCHEMA:
@@ -85,3 +87,6 @@ class Storage:
 
     def signature_png(self, file_id: str) -> Path:
         return self.signatures / f"{file_id}.png"
+
+    def signed_pdf(self, file_id: str) -> Path:
+        return self.signed / f"{file_id}.pdf"

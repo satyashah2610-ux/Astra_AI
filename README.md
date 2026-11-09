@@ -47,7 +47,7 @@ Tab to a field and use arrow keys to move it. Shift + arrow keys resize it; Dele
 
 ## Storage
 
-The backend automatically creates `backend/data/agreements.sqlite3` and `backend/data/uploads/`. SQLite stores agreement metadata, editable signature coordinates and files; `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, and `signatures/` stores each signer's signature image. Keep both together when backing up. To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
+The backend automatically creates `backend/data/agreements.sqlite3` and `backend/data/uploads/`. SQLite stores agreement metadata, editable signature coordinates and files; `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, `signatures/` stores each signer's signature image, and `signed/` stores each finished signed PDF. Keep both together when backing up. To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
 
 ## Security
 
@@ -99,7 +99,8 @@ The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides 
 - Implemented: PDF library, search, upload/drop, page navigation, zoom, editable signature fields, explicit save, restart persistence, validation, stale-save protection, sample PDF, responsive layout, and keyboard controls.
 - Files (backend): a file is one job or case for one client. Create a draft file with a client, a signer and an agreement, then send it to get a signing link. Sending freezes a copy of the agreement PDF and its signature boxes, so later template edits never change what was sent. Only a hash of each link's secret is stored; **Reissue link** revokes the old one. See [docs/design/02-files-and-signing-links.md](docs/design/02-files-and-signing-links.md) for the API.
 - Signing page: the client opens `/sign#<token>` with no account, reads every page of the frozen document with the signature boxes highlighted, types or draws a signature, ticks the electronic-signature consent and signs. The file moves Sent → Viewed → Signed, and each step is recorded with time, IP address and browser (`GET /api/files/{id}/events`). Already-signed and invalid/replaced links show a clear message. See [docs/design/03-signing-page.md](docs/design/03-signing-page.md).
-- Not built yet: the signed PDF with the signature stamped in, the Files screen in the UI (the Clients tab is still a placeholder; use the API at http://127.0.0.1:8000/docs to create and send files for now), email delivery and staff login.
+- Signed PDF: when the client signs, the app stamps their signature into every box of the exact document that was sent (rotated pages included) and appends a **certificate of completion**: signer, email, method, consent wording, IP address, browser, the full timeline and the SHA-256 of the sent document. It is built once and never changes. The client downloads it from the confirmation page (or by reopening their link); staff download it from `GET /api/files/{id}/signed.pdf`. See [docs/design/04-signed-pdf.md](docs/design/04-signed-pdf.md).
+- Not built yet: the Files screen in the UI (the Clients tab is still a placeholder; use the API at http://127.0.0.1:8000/docs to create and send files for now), email delivery and staff login.
 - This first version is a local single-workspace app. Authentication and company data isolation must be added before hosting it for multiple companies.
 - PDFs must be unencrypted, no larger than 20 MiB, and contain 1–100 pages. PDF pages are rendered as a canvas; selectable PDF text and screen-reader transcription of document contents are not included yet.
 

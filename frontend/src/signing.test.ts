@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { signingApi, tokenFromLocation } from './signing';
+import { blobText } from './test-utils';
 
 const token = 'Abc_def-1234567890Abc_def-1234567890Abc_def';
 
@@ -39,5 +40,24 @@ describe('signingApi', () => {
   it('surfaces the server message on failure', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'This signing link is invalid or has been replaced.' }), { status: 404 })));
     await expect(signingApi(token).load()).rejects.toThrow('invalid or has been replaced');
+  });
+});
+
+describe('downloadSigned', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('fetches the signed PDF with the token in a header and returns it as a file', async () => {
+    const fetch = vi.fn(async () => new Response('%PDF-1.7', { headers: { 'Content-Type': 'application/pdf' } }));
+    vi.stubGlobal('fetch', fetch);
+    const blob = await signingApi(token).downloadSigned();
+    expect(await blobText(blob)).toBe('%PDF-1.7');
+    const [url, options] = (fetch.mock.calls as unknown as [string, RequestInit][])[0];
+    expect(url).toBe('/api/signing/signed.pdf');
+    expect(new Headers(options.headers).get('X-Signing-Token')).toBe(token);
+  });
+
+  it('surfaces the server message when the signed PDF is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'This agreement has not been signed yet.' }), { status: 404 })));
+    await expect(signingApi(token).downloadSigned()).rejects.toThrow('not been signed yet');
   });
 });

@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, Response
 from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
 from .models import FileCreate, FileUpdate
+from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .storage import Storage, utc_now
 from .tokens import hash_token, new_token
 
@@ -167,6 +168,14 @@ def create_files_router(storage: Storage) -> APIRouter:
         with storage.database() as db:
             public_file(fetch(db, identifier))
             return list_events(db, identifier)
+
+    @router.get("/{identifier}/signed.pdf")
+    def file_signed_pdf(identifier: str):
+        with storage.database() as db:
+            current = public_file(fetch(db, identifier))
+        path = ensure_signed_pdf(storage, identifier)
+        return FileResponse(path, media_type="application/pdf", filename=signed_pdf_filename(current["document_name"]),
+                            content_disposition_type="attachment")
 
     @router.get("/{identifier}/pdf")
     def file_pdf(identifier: str):

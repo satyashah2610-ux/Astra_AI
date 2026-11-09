@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import SigningPage from './SigningPage';
 import Root from './Root';
+import { blobText } from './test-utils';
 
 vi.mock('./PdfPages', () => ({ default: ({ marks }: any) => <div>PDF with {marks.length} signature box</div> }));
 vi.mock('./SignaturePad', () => ({
@@ -19,15 +20,28 @@ const view = { document_name: 'MIND client agreement', signer_name: 'Jordan Smit
 let state: any;
 let calls: { url: string; method: string; body?: any; token: string | null }[];
 let failSign: boolean;
+let failDownload: boolean;
+let saved: { blob: Blob; filename: string }[];
 
 beforeEach(() => {
   state = { ...view };
   calls = [];
   failSign = false;
+  failDownload = false;
+  saved = [];
+  // Capture what the page saves: the Blob URL and the anchor's download filename.
+  const blobs = new Map<string, Blob>();
+  // A real URL subclass, so `new URL(...)` still works while object URLs are captured.
+  vi.stubGlobal('URL', class extends URL { static createObjectURL(blob: Blob) { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; } static revokeObjectURL() {} });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { saved.push({ blob: blobs.get(this.href)!, filename: this.download }); });
   vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method ?? 'GET';
     calls.push({ url, method, body: options.body ? JSON.parse(options.body as string) : undefined, token: new Headers(options.headers).get('X-Signing-Token') });
     if (state === null) return new Response(JSON.stringify({ detail: 'This signing link is invalid or has been replaced. Ask the sender for a new link.' }), { status: 404 });
+    if (url === '/api/signing/signed.pdf') {
+      if (failDownload) return new Response(JSON.stringify({ detail: 'The signed PDF could not be created.' }), { status: 503 });
+      return new Response('%PDF-signed', { headers: { 'Content-Type': 'application/pdf' } });
+    }
     if (url === '/api/signing/view') state = { ...state, status: state.status === 'sent' ? 'viewed' : state.status };
     if (url === '/api/signing/sign') {
       if (failSign) return new Response(JSON.stringify({ detail: 'Could not save your signature. Try again.' }), { status: 503 });
@@ -36,6 +50,8 @@ beforeEach(() => {
     return new Response(JSON.stringify(state));
   }));
 });
+
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const signButton = () => screen.getByRole('button', { name: 'Sign agreement' });
 
@@ -110,4 +126,41 @@ it('routes signing links to the signing page and everything else to the staff wo
   signing.unmount();
   render(<Root path="/" hash="" />);
   expect(screen.getByText('Staff workspace')).toBeInTheDocument();
+});
+
+async function signNow() {
+  render(<SigningPage token={token} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Provide signature' }));
+  await userEvent.click(screen.getByLabelText(consent));
+  await userEvent.click(signButton());
+  await screen.findByRole('heading', { name: /You’ve signed/ });
+}
+
+it('lets the signer download the signed copy right after signing, authenticated by header', async () => {
+  await signNow();
+  await userEvent.click(screen.getByRole('button', { name: 'Download signed copy' }));
+  await waitFor(() => expect(saved).toHaveLength(1));
+  expect(saved[0].filename).toBe('MIND client agreement - signed.pdf');
+  expect(await blobText(saved[0].blob)).toBe('%PDF-signed');
+  const download = calls.find(call => call.url === '/api/signing/signed.pdf')!;
+  expect(download.token).toBe(token);
+  expect(download.url).not.toContain(token);
+});
+
+it('offers the signed copy again when the signer reopens a signed link', async () => {
+  state = { ...view, status: 'signed', signed_at: '2026-11-09T11:00:00Z' };
+  render(<SigningPage token={token} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Download signed copy' }));
+  await waitFor(() => expect(saved).toHaveLength(1));
+});
+
+it('explains a failed download and lets the signer try again', async () => {
+  failDownload = true;
+  await signNow();
+  await userEvent.click(screen.getByRole('button', { name: 'Download signed copy' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('could not be created');
+  expect(saved).toHaveLength(0);
+  failDownload = false;
+  await userEvent.click(screen.getByRole('button', { name: 'Download signed copy' }));
+  await waitFor(() => expect(saved).toHaveLength(1));
 });

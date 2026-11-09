@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 
 /** Staff side through the API: upload the sample, place one box on page 2, create a file and send it. */
@@ -40,6 +41,15 @@ test('a client opens the link, types a signature, consents and signs', async ({ 
   await sign.click();
 
   await expect(page.getByRole('heading', { name: `You’ve signed ${agreement.name}` })).toBeVisible();
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download signed copy' }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toBe(`${agreement.name} - signed.pdf`);
+  const signedPdf = readFileSync((await download.path())!);
+  expect(signedPdf.subarray(0, 5).toString()).toBe('%PDF-');
+  const staffCopy = await request.get(`/api/files/${fileId}/signed.pdf`);
+  expect(staffCopy.ok()).toBe(true);
+  expect(Buffer.compare(await staffCopy.body(), signedPdf)).toBe(0);  // signer and staff get the identical document
   const file = await (await request.get(`/api/files/${fileId}`)).json();
   expect(file.status).toBe('signed');
   expect(await timeline(request, fileId)).toEqual(['created', 'sent', 'viewed', 'signed']);

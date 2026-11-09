@@ -1,4 +1,4 @@
-import { request, type Mark } from './api';
+import { request, requestFile, type Mark } from './api';
 
 export type SigningStatus = 'sent' | 'viewed' | 'signed';
 export type SigningView = {
@@ -27,6 +27,7 @@ export function signingApi(token: string) {
     load: () => request<SigningView>('/api/signing', { headers }),
     markViewed: () => request<SigningView>('/api/signing/view', { method: 'POST', headers }),
     submit: (body: Submission) => request<SigningView>('/api/signing/sign', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    downloadSigned: () => requestFile('/api/signing/signed.pdf', { headers }),
     pdf: { url: '/api/signing/pdf', httpHeaders: headers },
   };
 }
