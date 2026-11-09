@@ -71,10 +71,17 @@ test('sample button, unsaved-change guard, multiple pages, keyboard and mobile l
   await expect(page.getByRole('button', { name: 'Add signature box', exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: 'Add signature box', exact: true }).click();
   const field = page.getByTestId('signature-field');
-  await field.focus();
+  await expect(field).toBeFocused();  // a newly added box takes keyboard focus
   const before = (await field.boundingBox())!;
   await page.keyboard.press('ArrowRight');
   expect((await field.boundingBox())!.x).toBeGreaterThan(before.x);
+  await page.getByTestId('pdf-overlay').click({ position: { x: 5, y: 5 } });  // deselect
+  await field.click();  // clicking a box, like a user, must also give it keyboard focus
+  await expect(field).toBeFocused();
+  const clicked = (await field.boundingBox())!;
+  await page.keyboard.press('ArrowDown');
+  expect((await field.boundingBox())!.y).toBeGreaterThan(clicked.y);
+  await expect(page.getByText('Width')).toHaveCount(0);
   await page.getByRole('tab', { name: 'Clients' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Keep editing' }).click();

@@ -106,3 +106,9 @@
 - Cleanups: `main.py` uses `Storage.template_pdf` and `utc_now` instead of rebuilding paths and timestamps; one shared `boxStyle` in `geometry.ts` replaces two copies; removed the unused `EVENT_TYPES` list (the database CHECK constraint is the real list).
 - Deferred: a `database(write=True)` helper so write transactions can't be forgotten (the two concrete races are fixed directly; revisit before adding more write endpoints), and sharing the page-render pipeline between `PdfEditor` and `PdfPages` (a refactor with no behaviour change).
 - Verification: 160 backend tests and 39 frontend tests pass; production build passes.
+
+## 2026-11-09 - Keyboard focus for signature boxes; simpler field panel
+- Bug: arrow keys did nothing after clicking a box. The pointer handler calls `preventDefault()` (needed for dragging), which also blocks the browser's focus change, so the box looked selected but had no keyboard focus. Newly drawn or added boxes had the same problem. The browser test missed it because it called `field.focus()` instead of clicking.
+- Fix: clicking, drawing or adding a box now gives it keyboard focus (without scrolling), so arrow keys move it and Shift + arrows resize it immediately.
+- Removed Width and Height from the selected-field panel. Page-relative percentages mean nothing to staff and resizing is done by dragging; Field type and Page remain.
+- TDD: new `PdfEditor.test.tsx` (fake PDF.js, plus a small PointerEvent shim because jsdom lacks one). All 3 tests failed without the fix and pass with it; 42 frontend tests pass, type check and build pass. The browser test now clicks the box like a user and checks focus after adding and after clicking.
