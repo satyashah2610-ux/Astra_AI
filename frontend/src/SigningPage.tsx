@@ -98,7 +98,7 @@ export default function SigningPage({ token }: { token: string }) {
     <p className="muted">The signed copy includes a certificate page with the signing record. You can close this page.</p>
   </main></div>;
 
-  const boxes = view.marks.length;
+  const oneBox = view.marks.length === 1;
   return <div className="signing-shell">{header}
     <main className="signing-layout">
       <section className="signing-document" aria-label="Agreement to sign">
@@ -115,8 +115,8 @@ export default function SigningPage({ token }: { token: string }) {
       <aside className="signing-panel">
         <div className="eyebrow">SIGNATURE REQUESTED</div>
         <h1>{view.document_name}</h1>
-        <p className="signing-intro">Hi {view.signer_name}, please read the agreement and sign below. Your signature will be placed in the {boxes} highlighted {boxes === 1 ? 'box' : 'boxes'}.</p>
-        <button className="text-button" onClick={goToBox}><ArrowDown size={14} />Go to signature {boxes === 1 ? 'box' : 'boxes'}</button>
+        <p className="signing-intro">Hi {view.signer_name}, please read the agreement and sign below. Your signature will be placed in {oneBox ? 'the highlighted box' : 'all the highlighted boxes'}.</p>
+        <button className="text-button" onClick={goToBox}><ArrowDown size={14} />Go to signature {oneBox ? 'box' : 'boxes'}</button>
         <div className="field-divider" />
         <label className="form-field"><span>Full name</span><input value={name} onChange={e => setName(e.target.value)} maxLength={200} autoComplete="name" disabled={busy} /></label>
         <SignaturePad name={name} onChange={setSignature} />

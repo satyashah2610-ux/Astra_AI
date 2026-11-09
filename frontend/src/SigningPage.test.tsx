@@ -72,7 +72,7 @@ it('shows a clear message for an invalid or replaced link', async () => {
 it('loads the document, marks it viewed once and shows the consent wording from the server', async () => {
   render(<SigningPage token={token} />);
   expect(await screen.findByRole('heading', { name: 'MIND client agreement' })).toBeInTheDocument();
-  expect(screen.getByText(/Jordan Smith/)).toBeInTheDocument();
+  expect(screen.getByText('Hi Jordan Smith, please read the agreement and sign below. Your signature will be placed in the highlighted box.')).toBeInTheDocument();
   expect(screen.getByText('PDF with 1 signature box')).toBeInTheDocument();
   expect(screen.getByLabelText(consent)).not.toBeChecked();
   await waitFor(() => expect(calls.filter(call => call.url === '/api/signing/view')).toHaveLength(1));
@@ -282,4 +282,10 @@ it('sends every placed item, the initials and the time zone with the signature',
   }
   expect(body.initials).toEqual({ method: 'drawn', image: 'data:image/png;base64,INITIALS' });
   expect(body.utc_offset_minutes).toBe(-new Date().getTimezoneOffset());
+});
+
+it('says "all the highlighted boxes" when there is more than one signature box', async () => {
+  state = { ...view, marks: [...view.marks, { id: 'm2', page: 2, x: .1, y: .8, width: .3, height: .08 }] };
+  render(<SigningPage token={token} />);
+  expect(await screen.findByText('Hi Jordan Smith, please read the agreement and sign below. Your signature will be placed in all the highlighted boxes.')).toBeInTheDocument();
 });
