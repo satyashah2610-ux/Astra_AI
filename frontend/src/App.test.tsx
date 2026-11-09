@@ -7,13 +7,24 @@ vi.mock('./PdfEditor', () => ({ default: ({ onChange, marks }: any) => <button o
 
 const agreement = { id: 'abc', name: 'Consulting agreement', filename: 'Consulting agreement.pdf', page_count: 2, marks: [], version: 0, created_at: '2026-11-09T12:00:00Z', updated_at: '2026-11-09T12:00:00Z' };
 let records: any[];
+let sentFiles: any[];
 let failSave: boolean;
 let failDelete: boolean;
 beforeEach(() => {
   records = [];
+  sentFiles = [];
   failSave = false;
   failDelete = false;
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith('/api/files')) {
+      if (url === '/api/files' && options?.method === 'POST') {
+        sentFiles.push({ ...JSON.parse(options.body as string), id: 'f1', status: 'draft', version: 0, field_count: 0, document_name: null, document_sha256: null, page_count: null, created_at: '', updated_at: '', sent_at: null, viewed_at: null, signed_at: null });
+        return new Response(JSON.stringify(sentFiles[0]), { status: 201 });
+      }
+      if (url.endsWith('/send')) { sentFiles[0] = { ...sentFiles[0], status: 'sent', version: 1 }; return new Response(JSON.stringify({ file: sentFiles[0], signing_path: '/sign#secret-shown-once' })); }
+      if (url.endsWith('/events')) return new Response(JSON.stringify([]));
+      return new Response(JSON.stringify(sentFiles));
+    }
     if (options?.method === 'DELETE') {
       if (failDelete) return new Response(JSON.stringify({ detail: 'Could not delete. Try again.' }), { status: 503 });
       records = records.filter(item => !url.endsWith(`/${item.id}`));
@@ -34,8 +45,9 @@ it('shows exactly the two requested navigation tabs and a useful empty state', a
   render(<App />);
   expect(screen.getAllByRole('tab')).toHaveLength(2);
   expect(await screen.findByText('Your first agreement starts here')).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('tab', { name: /Clients/ }));
-  expect(screen.getByText('Your clients, all in one place')).toBeInTheDocument();
+  expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Agreements', 'Files']);
+  await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
+  expect(await screen.findByText('No files yet')).toBeInTheDocument();
 });
 
 it('uploads a PDF, edits marks, saves them, and restores them on remount', async () => {
@@ -71,7 +83,7 @@ it('asks before switching tabs when there are unsaved changes', async () => {
   render(<App />);
   await screen.findByText('Draw test field');
   await userEvent.click(screen.getByText('Draw test field'));
-  await userEvent.click(screen.getByRole('tab', { name: /Clients/ }));
+  await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
   expect(screen.getByRole('dialog')).toHaveTextContent('Unsaved changes');
   await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -126,4 +138,21 @@ it('preserves the agreement and edits when deletion fails, and allows retry', as
   failDelete = false;
   await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
   await screen.findByText('Your first agreement starts here');
+});
+
+it('keeps the once-only signing link when staff switch to Agreements and back', async () => {
+  records = [{ ...agreement, marks: [{ id: 'm1', page: 1, x: .1, y: .6, width: .3, height: .1 }] }];
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
+  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+  await userEvent.type(screen.getByLabelText('File name or reference'), 'Smith job');
+  await userEvent.type(screen.getByLabelText('Client name'), 'Smith Family');
+  await userEvent.type(screen.getByLabelText('Signer name'), 'Jordan Smith');
+  await userEvent.type(screen.getByLabelText('Signer email'), 'jordan@example.com');
+  await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  expect(await screen.findByLabelText('Signing link')).toHaveValue(`${window.location.origin}/sign#secret-shown-once`);
+  await userEvent.click(screen.getByRole('tab', { name: /Agreements/ }));
+  await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
+  expect(await screen.findByLabelText('Signing link')).toHaveValue(`${window.location.origin}/sign#secret-shown-once`);
 });

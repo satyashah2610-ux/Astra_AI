@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, CheckCircle2, FileText, FolderOpen, Loader2, Plus, Search, Sparkles, Trash2, Upload, Users, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, FileSignature, FileText, FolderOpen, Loader2, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { request, type Agreement, type Mark } from './api';
 import PdfEditor from './PdfEditor';
+import FilesPage from './FilesPage';
 
 export default function App() {
-  const [tab, setTab] = useState<'agreements' | 'clients'>('agreements');
+  const [tab, setTab] = useState<'agreements' | 'files'>('agreements');
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [active, setActive] = useState<Agreement | null>(null);
   const [marks, setMarks] = useState<Mark[]>([]);
@@ -99,15 +100,17 @@ export default function App() {
       <a className="brand" href="/" onClick={e => { e.preventDefault(); guard(() => { setMarks(active?.marks || []); setTab('agreements'); }); }}><span className="brand-icon"><Sparkles size={22} strokeWidth={1.6} /></span>Astra Sign<span className="brand-divider" /> <span className="brand-product">Agreements</span></a>
       <nav role="tablist" aria-label="Main navigation">
         <button role="tab" aria-selected={tab === 'agreements'} disabled={busy} onClick={() => tab !== 'agreements' && guard(() => { setMarks(active?.marks || []); setTab('agreements'); })}><FileText size={16} />Agreements</button>
-        <button role="tab" aria-selected={tab === 'clients'} disabled={busy} onClick={() => tab !== 'clients' && guard(() => { setMarks(active?.marks || []); setTab('clients'); })}><Users size={16} />Clients</button>
+        <button role="tab" aria-selected={tab === 'files'} disabled={busy} onClick={() => tab !== 'files' && guard(() => { setMarks(active?.marks || []); setTab('files'); })}><FileSignature size={16} />Files</button>
       </nav>
       <div className="workspace-label"><span className="status-dot" />Your workspace<span className="avatar">D</span></div>
     </header>
     <main>
-      <div className="page-heading"><div><div className="eyebrow">YOUR WORK, READY TO SIGN</div><h1>{tab === 'agreements' ? 'Good agreements. Great beginnings.' : 'Bring your clients on board.'}</h1><p>{tab === 'agreements' ? 'Prepare your agreements once. Make every new beginning a little easier.' : 'A simple home for your clients and their agreements.'}</p></div>{tab === 'agreements' && <button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}>{busy ? <Loader2 className="spin" size={17} /> : <Plus size={18} />}Upload agreement</button>}</div>
+      <div className="page-heading"><div><div className="eyebrow">YOUR WORK, READY TO SIGN</div><h1>{tab === 'agreements' ? 'Good agreements. Great beginnings.' : 'Every file, signed before work starts.'}</h1><p>{tab === 'agreements' ? 'Prepare your agreements once. Make every new beginning a little easier.' : 'Create a file for each job, send the signing link, and keep the signed copy.'}</p></div>{tab === 'agreements' && <button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}>{busy ? <Loader2 className="spin" size={17} /> : <Plus size={18} />}Upload agreement</button>}</div>
       <input ref={input} className="sr-only" tabIndex={-1} type="file" accept="application/pdf,.pdf" aria-label="Upload PDF file" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) guard(() => void upload(file)); }} />
       {error && <div className="error-banner" role="alert"><span>{error}</span><div>{error.includes('another tab') && <button onClick={() => guard(() => { void load(); })}>Reload saved version</button>}{error.includes('server') && <button onClick={() => guard(() => { void load(); })}>Retry</button>}<button aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button></div></div>}
-      {tab === 'clients' ? <section className="clients-placeholder"><span className="large-icon"><Users size={30} /></span><span className="tag">COMING NEXT</span><h2>Your clients, all in one place</h2><p>Add client details, send agreements, and track signatures here.<br />Start by preparing your first agreement template.</p><button className="secondary" onClick={() => setTab('agreements')}>Back to agreements<ArrowRight size={16} /></button></section> : <section className="workspace">
+      {/* Files stays mounted while hidden, so a just-shown signing link and any work in progress survive a tab switch. */}
+      <div hidden={tab !== 'files'}><FilesPage agreements={agreements} /></div>
+      {tab === 'files' ? null : <section className="workspace">
         <aside className="library">
           <div className="library-title"><h2>Your agreements</h2><span className="count">{agreements.length}</span></div>
           <label className="search"><Search size={15} /><input aria-label="Search agreements" placeholder="Find an agreement..." value={search} onChange={e => setSearch(e.target.value)} /></label>
@@ -119,7 +122,7 @@ export default function App() {
           {active ? <><div className="editor-heading"><div><div className="tiny-eyebrow">TEMPLATE EDITOR</div><h2>{active.name}</h2><div className="editor-meta"><span>{active.page_count} pages</span><span className="separator">/</span><span>{marks.length} signature {marks.length === 1 ? 'field' : 'fields'}</span><span className={`save-status ${dirty ? 'unsaved' : ''}`} role="status">{dirty ? <span className="status-dot" /> : <Check size={13} />}{dirty ? 'Unsaved changes' : 'All changes saved'}</span></div></div><div className="editor-actions"><button className="delete-agreement" disabled={busy} onClick={() => { setDeleteError(''); setError(''); setDeleteTarget(active); }}><Trash2 size={15} />Delete agreement</button><button className="primary save" disabled={busy || !dirty} onClick={() => void save()}>{busy ? <Loader2 className="spin" size={16} /> : <Check size={16} />}Save template</button></div></div><PdfEditor key={active.id} agreement={active} marks={marks} onChange={setMarks} disabled={busy} /></> : <div className="empty-state"><div className="empty-illustration"><div className="paper back" /><div className="paper front"><FileText size={28} strokeWidth={1.4} /><i /><i /><i /><div className="illustration-signature">Your signature</div></div><span className="floating-check"><Check size={20} /></span></div><span className="tag">LESS PAPERWORK. MORE POSSIBILITY.</span><h2>Your first agreement starts here</h2><p>Upload a PDF, mark where your client should sign,<br />and save it as a template you can use again.</p><button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}><Upload size={16} />Upload your first PDF</button><button className="text-button" disabled={busy || loading} onClick={() => void sample()}>Or explore a sample agreement<ArrowRight size={14} /></button><div className="empty-steps"><span><span>1</span>Upload PDF</span><span><span>2</span>Place signatures</span><span><span>3</span>Save template</span></div></div>}
         </div>
       </section>}
-      <footer><span><FolderOpen size={13} />A little preparation. A smoother start.</span><span>Astra Sign Agreements <span className="footer-dot">·</span> Template workspace</span></footer>
+      <footer><span><FolderOpen size={13} />A little preparation. A smoother start.</span><span>Astra Sign <span className="footer-dot">·</span> {tab === 'files' ? 'Files' : 'Template workspace'}</span></footer>
     </main>
     {confirm && <dialog ref={dialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); setConfirm(false); }} aria-labelledby="discard-title"><h2 id="discard-title">Unsaved changes</h2><p>Your signature fields have changed. Keep editing to save them, or discard these changes and continue.</p><div className="dialog-actions"><button autoFocus className="secondary" onClick={() => setConfirm(false)}>Keep editing</button><button className="primary" onClick={() => { setConfirm(false); pending.current(); }}>Discard changes</button></div></dialog>}
     {deleteTarget && <dialog ref={deleteDialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); if (!busy) setDeleteTarget(null); }} aria-labelledby="delete-title" aria-describedby="delete-description">

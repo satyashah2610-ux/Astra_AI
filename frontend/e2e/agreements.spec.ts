@@ -82,7 +82,7 @@ test('sample button, unsaved-change guard, multiple pages, keyboard and mobile l
   await page.keyboard.press('ArrowDown');
   expect((await field.boundingBox())!.y).toBeGreaterThan(clicked.y);
   await expect(page.getByText('Width', { exact: true })).toHaveCount(0);  // exact: the zoom menu has "Fit width"
-  await page.getByRole('tab', { name: 'Clients' }).click();
+  await page.getByRole('tab', { name: 'Files' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Keep editing' }).click();
   await page.getByRole('button', { name: 'Next page' }).click();
