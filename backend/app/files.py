@@ -54,6 +54,7 @@ def create_files_router(storage: Storage) -> APIRouter:
     def create_file(body: FileCreate):
         identifier, now = str(uuid4()), utc_now()
         with storage.database() as db:
+            db.execute("BEGIN IMMEDIATE")  # the agreement cannot be deleted between the check and the insert
             require_agreement(db, body.agreement_id)
             db.execute("""INSERT INTO files (id, title, client_name, signer_name, signer_email, agreement_id,
                           status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",

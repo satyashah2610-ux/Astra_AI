@@ -1,5 +1,7 @@
 export type Point = { x: number; y: number };
 export type Box = Point & { width: number; height: number };
+/** CSS placement of a page-relative box inside its page. */
+export const boxStyle = (box: Box) => ({ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` });
 export const clamp = (n: number, min = 0, max = 1) => Math.min(max, Math.max(min, n));
 export function drawBox(start: Point, end: Point): Box | null {
   const x = Math.min(clamp(start.x), clamp(end.x));

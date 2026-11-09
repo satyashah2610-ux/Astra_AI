@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Download, Grip, Loader2, PenLine, Trash2 } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import { PDF_ASSETS } from './pdfjs';
-import { clamp, drawBox, moveBox, resizeBox, type Box, type Point } from './geometry';
+import { boxStyle as position, clamp, drawBox, moveBox, resizeBox, type Box, type Point } from './geometry';
 import type { Agreement, Mark } from './api';
 
 type Props = { agreement: Agreement; marks: Mark[]; onChange: (marks: Mark[]) => void; disabled: boolean };
 type Gesture = { kind: 'draw' | 'move' | 'resize'; start: Point; box?: Mark; original: Mark[] };
-const position = (box: Box): CSSProperties => ({ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` });
 
 export default function PdfEditor({ agreement, marks, onChange, disabled }: Props) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);

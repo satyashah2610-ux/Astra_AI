@@ -38,7 +38,8 @@ export default function SignaturePad({ name, onChange }: Props) {
     if (mode !== 'typed') return;
     let live = true;
     const trimmed = name.trim();
-    if (!trimmed) { report.current(null); return; }
+    report.current(null);  // the previous name's image must not be submitted while this one renders
+    if (!trimmed) return;
     void renderTypedSignature(trimmed).then(image => { if (live) report.current(image ? { method: 'typed', image } : null); });
     return () => { live = false; };
   }, [mode, name]);

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, PenLine } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import { PDF_ASSETS } from './pdfjs';
+import { boxStyle as position } from './geometry';
 import type { Mark } from './api';
 
 type Source = { url: string; httpHeaders: Record<string, string> };
 type Props = { source: Source; marks: Mark[]; pageCount: number; signature?: string | null };
-const position = (box: Mark): CSSProperties => ({ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%` });
 
 /**
  * Read-only document: every page stacked, signature boxes highlighted, pages drawn as they scroll into view.

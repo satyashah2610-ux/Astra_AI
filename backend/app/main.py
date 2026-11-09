@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path, PureWindowsPath
 from uuid import uuid4
@@ -15,7 +14,7 @@ from .lifecycle import FileStatus
 from .naming import unique_name
 from .sample import make_sample
 from .signing import create_signing_router
-from .storage import Storage
+from .storage import Storage, utc_now
 
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
@@ -45,7 +44,6 @@ def validate_pdf(content: bytes) -> int:
 def create_app(data_dir: Path | None = None) -> FastAPI:
     storage = Storage(Path(data_dir or os.environ.get("ASTRA_DATA_DIR") or Path(__file__).resolve().parents[1] / "data"))
     storage.initialize()
-    uploads = storage.uploads
     database = storage.database
 
     def item(row):
@@ -93,8 +91,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             raise HTTPException(413, "PDF must be 20 MB or smaller.")
         count = validate_pdf(content)
         identifier = str(uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        pdf_path = uploads / f"{identifier}.pdf"
+        now = utc_now()
+        pdf_path = storage.template_pdf(identifier)
         pdf_path.write_bytes(content)
         try:
             with database() as db:
@@ -117,7 +115,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.get("/api/agreements/{identifier}/pdf")
     def get_pdf(identifier: str):
         agreement = find(identifier)
-        path = uploads / f"{agreement['id']}.pdf"
+        path = storage.template_pdf(agreement["id"])
         if not path.is_file():
             raise HTTPException(404, "The PDF file is unavailable. Upload the agreement again.")
         return FileResponse(path, media_type="application/pdf", filename=agreement["filename"], content_disposition_type="inline")
@@ -137,7 +135,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                                              "Send or delete those files first.")
                 db.execute("DELETE FROM agreements WHERE id = ?", (identifier,))
                 # An unlink error rolls back the row removal, retaining all markings.
-                (uploads / f"{agreement['id']}.pdf").unlink(missing_ok=True)
+                storage.template_pdf(agreement["id"]).unlink(missing_ok=True)
         except OSError as exc:
             logger.warning("Agreement file deletion failed id=%s", identifier)
             raise HTTPException(503, "Could not delete the PDF. Close any program using the file and try again.") from exc
@@ -147,12 +145,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @app.put("/api/agreements/{identifier}/marks")
     def save_marks(identifier: str, body: SaveMarks):
         with database() as db:
+            db.execute("BEGIN IMMEDIATE")  # serialize against deletion so a vanished agreement gives 404, not 409
             agreement = item(db.execute("SELECT * FROM agreements WHERE id = ?", (identifier,)).fetchone())
             if any(mark.page > agreement["page_count"] for mark in body.marks):
                 raise HTTPException(422, "A signature box refers to a page that does not exist.")
             marks = json.dumps([mark.model_dump() for mark in body.marks])
             result = db.execute("UPDATE agreements SET marks = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-                                (marks, datetime.now(timezone.utc).isoformat(), identifier, body.version))
+                                (marks, utc_now(), identifier, body.version))
             if result.rowcount != 1:
                 raise HTTPException(409, "This agreement was changed in another tab. Reload the saved version before editing again.")
             updated = item(db.execute("SELECT * FROM agreements WHERE id = ?", (identifier,)).fetchone())

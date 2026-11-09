@@ -3,9 +3,6 @@ from fastapi import Request
 
 from .storage import utc_now
 
-EVENT_TYPES = ("created", "sent", "link_reissued", "viewed", "signed")
-
-
 def request_origin(request: Request | None) -> tuple[str | None, str | None]:
     """(IP address, browser) of the person making the request."""
     if request is None:
