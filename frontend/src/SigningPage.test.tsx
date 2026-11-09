@@ -104,10 +104,10 @@ it('shows the signed state, without a form, for an agreement that is already sig
 });
 
 it('routes signing links to the signing page and everything else to the staff workspace', async () => {
-  const signing = render(<Root path={`/sign/${token}`} />);
+  const signing = render(<Root path="/sign" hash={`#${token}`} />);
   expect(await screen.findByRole('heading', { name: 'MIND client agreement' })).toBeInTheDocument();
   expect(screen.queryByText('Staff workspace')).not.toBeInTheDocument();
   signing.unmount();
-  render(<Root path="/" />);
+  render(<Root path="/" hash="" />);
   expect(screen.getByText('Staff workspace')).toBeInTheDocument();
 });

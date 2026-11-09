@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import PdfPages from './PdfPages';
 
 // The PDF never finishes loading in these tests: we check the layout before it arrives.
-vi.mock('./pdfjs', () => ({ PDF_ASSETS: {} }));
+vi.mock('./pdfjs', () => ({ PDF_OPTIONS: {} }));
 vi.mock('pdfjs-dist', () => ({ getDocument: () => ({ promise: new Promise(() => {}), destroy: async () => {} }) }));
 
 beforeEach(() => {

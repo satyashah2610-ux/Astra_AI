@@ -13,7 +13,7 @@ This step adds the file record and a secure signing link. The signing page itsel
 ```
  Staff (company)                                      Signer (client)
  ───────────────                                      ───────────────
- Agreement template ──(chosen for)──► File ──(send)──► Signing link /sign/<token>
+ Agreement template ──(chosen for)──► File ──(send)──► Signing link /sign#<token>
    PDF + signature boxes              client, signer,      (step 3: view + sign)
    (editable, reusable)               status, snapshot
 ```
@@ -45,7 +45,7 @@ Every other transition is rejected. Only drafts can be edited. Signed files cann
 | Document on send | Copy PDF + boxes (snapshot) | Reference the live template | A signed contract must match exactly what was sent, even if the template changes later. |
 | Token storage | SHA-256 hash only | Raw token in DB | A database leak cannot be turned into signing access. Cost: staff cannot re-display an old link, so **Reissue link** creates a new one and revokes the old. |
 | Token strength | `secrets.token_urlsafe(32)` (256 bits) | UUID4 (122 bits) | Unguessable. The link is the signer's only credential. |
-| Link format | API returns a path `/sign/<token>` | Full URL | The backend does not need to know its public host; the UI adds its origin. |
+| Link format | API returns `/sign#<token>` (secret in the fragment) | Full URL; secret in the path | The backend does not need to know its public host. Browsers never send the fragment to a server, so the secret stays out of web-server and proxy logs (changed during the security review). |
 | Delivery | Staff copy the link | Built-in email | Works with any mail setup and needs no email provider keys for the test. Email can come later. |
 | Signer email check | Simple shape check | `email-validator` dependency | Enough to catch typos without adding a dependency; nothing is emailed yet. |
 | Agreement deletion | Blocked while **draft** files use it | Cascade or orphan | Sent files have their own copy and are unaffected; drafts would otherwise break silently. |

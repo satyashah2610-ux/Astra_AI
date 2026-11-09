@@ -6,13 +6,14 @@ from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from pypdf import PdfReader
 from .models import SaveMarks
 from .files import create_files_router
 from .lifecycle import FileStatus
 from .naming import unique_name
 from .sample import make_sample
+from .security import SecurityMiddleware, parse_allowed_hosts
 from .signing import create_signing_router
 from .storage import Storage, utc_now
 
@@ -58,16 +59,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             return item(db.execute("SELECT * FROM agreements WHERE id = ?", (identifier,)).fetchone())
 
     app = FastAPI(title="Astra Sign", version="0.1.0")
-
-    @app.middleware("http")
-    async def request_limits(request, call_next):
-        length = request.headers.get("content-length")
-        if length and (not length.isdigit() or int(length) > MAX_BYTES + 1024 * 1024):
-            return JSONResponse({"detail": "PDF must be 20 MB or smaller."}, status_code=413)
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Cache-Control"] = "no-store"
-        return response
+    app.add_middleware(SecurityMiddleware,
+                       allowed_hosts=parse_allowed_hosts(os.environ.get("ASTRA_ALLOWED_HOSTS")),
+                       body_limit=MAX_BYTES + 1024 * 1024,  # the PDF plus multipart overhead
+                       body_limit_message="PDF must be 20 MB or smaller.",
+                       small_body_prefixes=("/api/signing",))  # public endpoints: 1 MiB is ample
 
     @app.get("/api/health")
     def health():

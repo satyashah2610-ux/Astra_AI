@@ -87,6 +87,6 @@ test('an invalid or replaced link explains what to do', async ({ page, request }
   await page.goto(path);
   await expect(page.getByRole('heading', { name: 'This link isn’t valid' })).toBeVisible();
   await expect(page.getByText(/Ask the sender for a new link/)).toBeVisible();
-  await page.goto('/sign/not-a-real-token-at-all-0000000000');
+  await page.goto('/sign#not-a-real-token-at-all-0000000000');  // same page, new fragment: must still re-check
   await expect(page.getByRole('heading', { name: 'This link isn’t valid' })).toBeVisible();
 });

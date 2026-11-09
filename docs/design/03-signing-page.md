@@ -11,7 +11,7 @@ A sent file has a secret link, but nothing happens when a signer opens it. The s
 ```
 Signer's browser                         Backend                              Storage
 ────────────────                         ───────                              ───────
-/sign/<token> (React page)
+/sign#<token> (React page)
   GET  /api/signing      ──token hdr──►  find file by sha256(token) ──────►  files
   POST /api/signing/view ──────────────► sent → viewed + event      ──────►  file_events
   GET  /api/signing/pdf  ──────────────► frozen snapshot PDF        ◄──────  documents/<id>.pdf
@@ -81,7 +81,7 @@ Signer responses never include the signer's email, the internal file title, or o
 
 | Unit | Responsibility |
 |---|---|
-| `main.tsx` | Renders `SigningPage` for `/sign/<token>`, otherwise the staff `App`. |
+| `main.tsx` / `Root.tsx` | Renders `SigningPage` for `/sign#<token>`, otherwise the staff `App`. |
 | `signing.ts` | `tokenFromPath(path)`; API client that adds the header. Pure / unit-tested. |
 | `strokes.ts` | Drawing-pad maths: `hasInk(strokes)` (enough movement to count as a signature). Unit-tested. |
 | `PdfPages.tsx` | Read-only viewer: all pages stacked, signature boxes highlighted. Loads the PDF with the token header. |
@@ -94,7 +94,7 @@ Signer responses never include the signer's email, the internal file title, or o
 
 **Backend integration (`test_signing.py`):** missing, unknown and revoked tokens give 404; the view never leaks email or title; `/view` moves sent → viewed exactly once and records one event; the PDF is the frozen snapshot; signing stores the signature, PNG file, consent text, IP and browser, and sets `signed_at`; signing straight from `sent` works; a second sign gives 409; simultaneous signs give exactly one success; draft files have no usable link; invalid images and missing consent change nothing; the staff events timeline lists created → sent → viewed → signed; deleting an unsigned file removes its events; everything survives a restart.
 
-**Frontend unit:** `tokenFromPath` accepts only `/sign/<token>`; `hasInk` rejects taps and accepts real strokes; the API client sends the header and surfaces server errors.
+**Frontend unit:** `tokenFromLocation` accepts only `/sign#<token>`; `hasInk` rejects taps and accepts real strokes; the API client sends the header and surfaces server errors.
 
 **Frontend integration (`SigningPage.test.tsx`):** invalid link message; marks as viewed on load; sign button disabled until there is a signature, a name and consent; successful submission shows the confirmation; an already-signed file shows the signed state with no form; server errors keep the form.
 

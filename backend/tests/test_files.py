@@ -33,8 +33,8 @@ def create_file(client, agreement_id, **overrides):
 
 
 def token_from(path):
-    assert path.startswith("/sign/")
-    return path.removeprefix("/sign/")
+    assert path.startswith("/sign#")
+    return path.removeprefix("/sign#")
 
 
 def stored_row(tmp_path, file_id):

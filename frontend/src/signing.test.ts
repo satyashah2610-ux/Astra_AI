@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { signingApi, tokenFromPath } from './signing';
+import { signingApi, tokenFromLocation } from './signing';
 
 const token = 'Abc_def-1234567890Abc_def-1234567890Abc_def';
 
-describe('tokenFromPath', () => {
-  it('reads the token from a signing link', () => {
-    expect(tokenFromPath(`/sign/${token}`)).toBe(token);
-    expect(tokenFromPath(`/sign/${token}/`)).toBe(token);
+describe('tokenFromLocation', () => {
+  it('reads the token from the URL fragment, which browsers never send to a server', () => {
+    expect(tokenFromLocation('/sign', `#${token}`)).toBe(token);
+    expect(tokenFromLocation('/sign/', `#${token}`)).toBe(token);
   });
-  it.each(['/', '/sign', '/sign/', '/sign/short', `/signs/${token}`, `/sign/${token}/extra`, `/sign/${token}!`, `/api/sign/${token}`])('rejects %s', path => {
-    expect(tokenFromPath(path)).toBeNull();
+  it.each([
+    ['/', `#${token}`], ['/sign', ''], ['/sign', '#'], ['/sign', '#short'], ['/signs', `#${token}`],
+    ['/sign', `#${token}!`], [`/sign/${token}`, ''], ['/api/signing', `#${token}`],
+  ])('rejects path %s with fragment %s', (path, hash) => {
+    expect(tokenFromLocation(path, hash)).toBeNull();
   });
 });
 

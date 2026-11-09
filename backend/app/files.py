@@ -35,7 +35,8 @@ def public_file(row) -> dict:
 
 
 def signing_path(token: str) -> str:
-    return f"/sign/{token}"
+    """The secret goes in the URL fragment: browsers never send it to any server or in a Referer."""
+    return f"/sign#{token}"
 
 
 def create_files_router(storage: Storage) -> APIRouter:

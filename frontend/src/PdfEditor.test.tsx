@@ -6,7 +6,7 @@ import PdfEditor from './PdfEditor';
 import type { Agreement, Mark } from './api';
 
 // A fake one-page PDF that "renders" instantly, so the editor becomes ready in jsdom.
-vi.mock('./pdfjs', () => ({ PDF_ASSETS: {} }));
+vi.mock('./pdfjs', () => ({ PDF_OPTIONS: {} }));
 vi.mock('pdfjs-dist', () => {
   const page = { getViewport: () => ({ width: 612, height: 792 }), render: () => ({ promise: Promise.resolve(), cancel() {} }) };
   return { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => page }), destroy: async () => {} }) };

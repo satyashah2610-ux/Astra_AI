@@ -49,6 +49,15 @@ Tab to a field and use arrow keys to move it. Shift + arrow keys resize it; Dele
 
 The backend automatically creates `backend/data/agreements.sqlite3` and `backend/data/uploads/`. SQLite stores agreement metadata, editable signature coordinates and files; `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, and `signatures/` stores each signer's signature image. Keep both together when backing up. To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
 
+## Security
+
+- **Staff login is not built yet.** Run the backend only on `127.0.0.1` (as above) until it is. Anyone who can reach the API can manage agreements and files.
+- The backend only answers requests addressed to an allowed host name (default `127.0.0.1,localhost`), which blocks DNS-rebinding attacks from other websites. When deploying, set `ASTRA_ALLOWED_HOSTS` to the public host name, e.g. `ASTRA_ALLOWED_HOSTS=sign.example.com`.
+- State-changing requests from other websites are rejected (`Origin` / `Sec-Fetch-Site` checks). Any proxy in front of the backend must pass the browser's `Host` header through unchanged; the Vite dev proxy is configured this way.
+- Request bodies are size-limited while they stream in: 21 MB for uploads, 1 MB for the public signing endpoints.
+- Signing links put the secret after `#` (`/sign#<token>`). Browsers never send that part to a server, so it stays out of every log; API calls send it in a header. Only a SHA-256 hash of each secret is stored.
+- API responses forbid framing, caching, content sniffing and referrers. PDF.js runs with code evaluation disabled.
+
 Coordinates are fractions of the displayed PDF page, with a top-left origin and one-based page numbers. Original PDFs are preserved. The **Original PDF** download does not include signature placement overlays; the app restores those from the database. Signed document generation is part of the future customer signing feature.
 
 ## Tests
@@ -89,7 +98,7 @@ The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides 
 
 - Implemented: PDF library, search, upload/drop, page navigation, zoom, editable signature fields, explicit save, restart persistence, validation, stale-save protection, sample PDF, responsive layout, and keyboard controls.
 - Files (backend): a file is one job or case for one client. Create a draft file with a client, a signer and an agreement, then send it to get a signing link. Sending freezes a copy of the agreement PDF and its signature boxes, so later template edits never change what was sent. Only a hash of each link's secret is stored; **Reissue link** revokes the old one. See [docs/design/02-files-and-signing-links.md](docs/design/02-files-and-signing-links.md) for the API.
-- Signing page: the client opens `/sign/<token>` with no account, reads every page of the frozen document with the signature boxes highlighted, types or draws a signature, ticks the electronic-signature consent and signs. The file moves Sent → Viewed → Signed, and each step is recorded with time, IP address and browser (`GET /api/files/{id}/events`). Already-signed and invalid/replaced links show a clear message. See [docs/design/03-signing-page.md](docs/design/03-signing-page.md).
+- Signing page: the client opens `/sign#<token>` with no account, reads every page of the frozen document with the signature boxes highlighted, types or draws a signature, ticks the electronic-signature consent and signs. The file moves Sent → Viewed → Signed, and each step is recorded with time, IP address and browser (`GET /api/files/{id}/events`). Already-signed and invalid/replaced links show a clear message. See [docs/design/03-signing-page.md](docs/design/03-signing-page.md).
 - Not built yet: the signed PDF with the signature stamped in, the Files screen in the UI (the Clients tab is still a placeholder; use the API at http://127.0.0.1:8000/docs to create and send files for now), email delivery and staff login.
 - This first version is a local single-workspace app. Authentication and company data isolation must be added before hosting it for multiple companies.
 - PDFs must be unencrypted, no larger than 20 MiB, and contain 1–100 pages. PDF pages are rendered as a canvas; selectable PDF text and screen-reader transcription of document contents are not included yet.

@@ -8,11 +8,16 @@ export type SigningView = {
 export type Signature = { method: 'typed' | 'drawn'; image: string };
 export type Submission = Signature & { name: string; consent: true };
 
-const TOKEN_PATH = /^\/sign\/([A-Za-z0-9_-]{20,})\/?$/;
+const SIGN_PATH = /^\/sign\/?$/;
+const TOKEN = /^#([A-Za-z0-9_-]{20,})$/;
 
-/** The link secret from a `/sign/<token>` page URL, or null for any other path. */
-export function tokenFromPath(path: string): string | null {
-  return TOKEN_PATH.exec(path)?.[1] ?? null;
+/**
+ * The link secret from a `/sign#<token>` page URL, or null for any other location.
+ * The secret lives in the fragment because browsers never send fragments to a server or in a Referer,
+ * so it cannot end up in web-server, proxy or CDN logs.
+ */
+export function tokenFromLocation(path: string, hash: string): string | null {
+  return SIGN_PATH.test(path) ? TOKEN.exec(hash)?.[1] ?? null : null;
 }
 
 /** Signing API client. The secret goes in a header so it never appears in server access logs. */

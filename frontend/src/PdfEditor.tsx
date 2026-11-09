@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Download, Grip, Loader2, PenLine, Trash2 } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { PDF_ASSETS } from './pdfjs';
+import { PDF_OPTIONS } from './pdfjs';
 import { boxStyle as position, clamp, drawBox, moveBox, resizeBox, type Box, type Point } from './geometry';
 import type { Agreement, Mark } from './api';
 
@@ -29,7 +29,7 @@ export default function PdfEditor({ agreement, marks, onChange, disabled }: Prop
   const pageMarks = marks.filter(mark => mark.page === page);
 
   useEffect(() => {
-    const task = getDocument({ url: `/api/agreements/${agreement.id}/pdf`, ...PDF_ASSETS });
+    const task = getDocument({ url: `/api/agreements/${agreement.id}/pdf`, ...PDF_OPTIONS });
     let live = true;
     task.promise.then(document => { if (live) setPdf(document); }).catch(() => { if (live) setError('This PDF could not be displayed. Try exporting it as a new PDF.'); });
     return () => { live = false; void task.destroy(); };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, PenLine } from 'lucide-react';
 import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { PDF_ASSETS } from './pdfjs';
+import { PDF_OPTIONS } from './pdfjs';
 import { boxStyle as position } from './geometry';
 import type { Mark } from './api';
 
@@ -19,7 +19,7 @@ export default function PdfPages({ source, marks, pageCount, signature }: Props)
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const task = getDocument({ ...source, ...PDF_ASSETS });
+    const task = getDocument({ ...source, ...PDF_OPTIONS });
     let live = true;
     task.promise.then(document => { if (live) setPdf(document); }).catch(() => { if (live) setError('This document could not be displayed. Ask the sender to check the PDF.'); });
     return () => { live = false; void task.destroy(); };
