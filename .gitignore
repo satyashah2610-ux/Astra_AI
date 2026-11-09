@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+backend/data/
+frontend/node_modules/
+frontend/dist/
+frontend/public/pdf-assets/
+frontend/tsconfig.tsbuildinfo
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+tmp/
+.env
+*.log

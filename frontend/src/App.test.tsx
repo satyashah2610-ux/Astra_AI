@@ -1,0 +1,129 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, expect, it, vi } from 'vitest';
+import App from './App';
+
+vi.mock('./PdfEditor', () => ({ default: ({ onChange, marks }: any) => <button onClick={() => onChange([...marks, { id: 'test-field', page: 1, x: .1, y: .6, width: .3, height: .1 }])}>Draw test field</button> }));
+
+const agreement = { id: 'abc', name: 'Consulting agreement', filename: 'Consulting agreement.pdf', page_count: 2, marks: [], version: 0, created_at: '2026-11-09T12:00:00Z', updated_at: '2026-11-09T12:00:00Z' };
+let records: any[];
+let failSave: boolean;
+let failDelete: boolean;
+beforeEach(() => {
+  records = [];
+  failSave = false;
+  failDelete = false;
+  vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+    if (options?.method === 'DELETE') {
+      if (failDelete) return new Response(JSON.stringify({ detail: 'Could not delete. Try again.' }), { status: 503 });
+      records = records.filter(item => !url.endsWith(`/${item.id}`));
+      return new Response(null, { status: 204 });
+    }
+    if (options?.method === 'POST') { records.push({ ...agreement }); return new Response(JSON.stringify(agreement), { status: 201 }); }
+    if (options?.method === 'PUT') {
+      if (failSave) return new Response(JSON.stringify({ detail: 'Could not save. Try again.' }), { status: 500 });
+      const data = JSON.parse(options.body as string);
+      records[0] = { ...records[0], marks: data.marks, version: 1 };
+      return new Response(JSON.stringify(records[0]));
+    }
+    return new Response(JSON.stringify(url.endsWith('/abc') ? records[0] : records));
+  }));
+});
+
+it('shows exactly the two requested navigation tabs and a useful empty state', async () => {
+  render(<App />);
+  expect(screen.getAllByRole('tab')).toHaveLength(2);
+  expect(await screen.findByText('Your first agreement starts here')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('tab', { name: /Clients/ }));
+  expect(screen.getByText('Your clients, all in one place')).toBeInTheDocument();
+});
+
+it('uploads a PDF, edits marks, saves them, and restores them on remount', async () => {
+  const view = render(<App />);
+  await screen.findByText('Your first agreement starts here');
+  fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['%PDF'], 'Consulting agreement.pdf', { type: 'application/pdf' })] } });
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  await userEvent.click(screen.getByText('Draw test field'));
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Save template' }));
+  await screen.findByText('All changes saved');
+  expect(records[0].marks).toHaveLength(1);
+  view.unmount();
+  render(<App />);
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  expect(screen.getByText('1 signature field')).toBeInTheDocument();
+});
+
+it('keeps local changes and displays the error when a save fails', async () => {
+  records = [{ ...agreement }];
+  failSave = true;
+  render(<App />);
+  await screen.findByText('Draw test field');
+  await userEvent.click(screen.getByText('Draw test field'));
+  await userEvent.click(screen.getByRole('button', { name: 'Save template' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not save');
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save template' })).toBeEnabled();
+});
+
+it('asks before switching tabs when there are unsaved changes', async () => {
+  records = [{ ...agreement }];
+  render(<App />);
+  await screen.findByText('Draw test field');
+  await userEvent.click(screen.getByText('Draw test field'));
+  await userEvent.click(screen.getByRole('tab', { name: /Clients/ }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('Unsaved changes');
+  await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('rejects non-PDF uploads before sending them', async () => {
+  render(<App />);
+  await screen.findByText('Your first agreement starts here');
+  fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] } });
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('PDF'));
+  expect(records).toHaveLength(0);
+});
+
+it('confirms deletion, preserves unsaved work on cancel, and clears the last agreement', async () => {
+  records = [{ ...agreement }];
+  render(<App />);
+  await screen.findByText('Draw test field');
+  expect(screen.getByRole('link', { name: /Astra Sign/ })).toBeInTheDocument();
+  await userEvent.click(screen.getByText('Draw test field'));
+  await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
+  expect(screen.getByRole('dialog')).toHaveTextContent('Consulting agreement');
+  expect(records).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+  await screen.findByText('Your first agreement starts here');
+  expect(records).toHaveLength(0);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('opens the next agreement after deleting the selected agreement', async () => {
+  records = [{ ...agreement }, { ...agreement, id: 'keep', name: 'Keep this agreement' }];
+  render(<App />);
+  await screen.findByText('Draw test field');
+  await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+  await screen.findByRole('heading', { name: 'Keep this agreement' });
+  expect(records).toHaveLength(1);
+});
+
+it('preserves the agreement and edits when deletion fails, and allows retry', async () => {
+  records = [{ ...agreement }]; failDelete = true;
+  render(<App />);
+  await screen.findByText('Draw test field');
+  await userEvent.click(screen.getByText('Draw test field'));
+  await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not delete');
+  expect(records).toHaveLength(1);
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+  failDelete = false;
+  await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+  await screen.findByText('Your first agreement starts here');
+});

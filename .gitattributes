@@ -1,0 +1,7 @@
+# Text files use LF in the repository; binaries are never converted.
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.sqlite3 binary
