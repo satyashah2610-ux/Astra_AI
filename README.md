@@ -1,6 +1,6 @@
 # Astra Sign
 
-A local agreement template editor: upload a PDF, draw signature fields, move or resize them, and save the template for reuse. Python FastAPI backend, React/TypeScript frontend, and SQLite persistence.
+A local agreement template editor: upload a PDF, draw signature fields, move or resize them, and save the template for reuse. Python FastAPI backend, React/TypeScript frontend, and PostgreSQL (Neon) persistence.
 
 ## Run on Windows
 
@@ -13,6 +13,14 @@ cd frontend
 npm.cmd ci
 cd ..
 ```
+
+Point the app at its PostgreSQL database. Create `.env.local` in the repository root (git-ignored; never commit it):
+
+```
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```
+
+With a Neon project this file is written for you by `neon env pull`. Variables already set in the environment always win over the file. On first start the backend creates its tables (versioned migrations in `backend/app/schema/`).
 
 Start the backend in one terminal:
 
@@ -29,7 +37,7 @@ npm.cmd run dev
 
 Open **http://127.0.0.1:5173**. API documentation: http://127.0.0.1:8000/docs.
 
-On macOS/Linux use `.venv/bin/python` and `npm` instead. Node.js 24 and Python 3.14 were used for development. The application does not require API keys or a separate database service.
+On macOS/Linux use `.venv/bin/python` and `npm` instead. Node.js 24 and Python 3.14 were used for development. The only external service is PostgreSQL (`DATABASE_URL`).
 
 ## Try the feature
 
@@ -47,7 +55,7 @@ Tab to a field and use arrow keys to move it. Shift + arrow keys resize it; Dele
 
 ## Storage
 
-The backend automatically creates `backend/data/agreements.sqlite3` and `backend/data/uploads/`. SQLite stores agreement metadata, editable signature coordinates and files; `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, `signatures/` stores each signer's signature image, and `signed/` stores each finished signed PDF. Keep both together when backing up. To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
+PostgreSQL stores agreement metadata, editable signature coordinates, files, signatures and the audit trail. Files on disk live in `backend/data/`: `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, `signatures/` stores each signer's signature image, and `signed/` stores each finished signed PDF. Back up the database and `backend/data/` together (moving PDFs to object storage is planned before hosting). To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
 
 ## Security
 
@@ -62,7 +70,13 @@ Coordinates are fractions of the displayed PDF page, with a top-left origin and 
 
 ## Tests
 
-Backend unit and integration tests (isolated temporary storage):
+Backend unit and integration tests run against a **separate test database**, never the app's own. Put its *direct* (non-pooled) URL in `.env.test.local` (git-ignored):
+
+```
+ASTRA_TEST_DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```
+
+With Neon, use a branch named `test` (`neon branches create --name test`, then `neon connection-string test`). Tests refuse to start if this URL points at the same server as `DATABASE_URL`, and they only create, empty and drop their own `astra_test_…` schema. A local PostgreSQL also works: `docker compose up -d` starts one on port 54329 (`postgresql://astra:astra@127.0.0.1:54329/postgres`). Browser tests reset an `astra_e2e` schema on the same test database each run.
 
 ```powershell
 cd backend

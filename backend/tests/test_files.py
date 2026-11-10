@@ -1,5 +1,4 @@
 import hashlib
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -7,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.tokens import hash_token
+from tests import db
 from tests.test_agreements import mark, pdf_bytes, save, upload
 
 
@@ -38,9 +38,7 @@ def token_from(path):
 
 
 def stored_row(tmp_path, file_id):
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        db.row_factory = sqlite3.Row
-        return dict(db.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone())
+    return dict(db.row("SELECT * FROM files WHERE id = %s", (file_id,)))
 
 
 SECRET_KEYS = {"token", "token_hash", "signing_token"}
@@ -234,8 +232,7 @@ def test_deleting_a_sent_file_removes_snapshot_and_link(client, tmp_path):
 def test_signed_file_cannot_be_deleted(client, tmp_path):
     item = create_file(client, prepared_agreement(client)["id"]).json()
     client.post(f"/api/files/{item['id']}/send")
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        db.execute("UPDATE files SET status = 'signed' WHERE id = ?", (item["id"],))
+    db.execute("UPDATE files SET status = 'signed' WHERE id = %s", (item["id"],))
     assert client.delete(f"/api/files/{item['id']}").status_code == 409
     assert client.get(f"/api/files/{item['id']}").json()["status"] == "signed"
     assert client.post(f"/api/files/{item['id']}/link").status_code == 409

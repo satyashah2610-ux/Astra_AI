@@ -11,6 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
 
+from .database import write_lock
 from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
 from .models import FileCreate, FileUpdate
@@ -45,10 +46,10 @@ def create_files_router(storage: Storage) -> APIRouter:
     router = APIRouter(prefix="/api/files", tags=["files"])
 
     def fetch(db, identifier):
-        return db.execute("SELECT * FROM files WHERE id = ?", (identifier,)).fetchone()
+        return db.execute("SELECT * FROM files WHERE id = %s", (identifier,)).fetchone()
 
     def require_agreement(db, agreement_id):
-        agreement = db.execute("SELECT * FROM agreements WHERE id = ?", (agreement_id,)).fetchone()
+        agreement = db.execute("SELECT * FROM agreements WHERE id = %s", (agreement_id,)).fetchone()
         if agreement is None:
             raise HTTPException(422, "Choose an agreement that exists in your library.")
         return agreement
@@ -57,10 +58,10 @@ def create_files_router(storage: Storage) -> APIRouter:
     def create_file(body: FileCreate):
         identifier, now = str(uuid4()), utc_now()
         with storage.database() as db:
-            db.execute("BEGIN IMMEDIATE")  # the agreement cannot be deleted between the check and the insert
+            write_lock(db)  # the agreement cannot be deleted between the check and the insert
             require_agreement(db, body.agreement_id)
             db.execute("""INSERT INTO files (id, title, client_name, signer_name, signer_email, agreement_id,
-                          status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                          status, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                        (identifier, body.title, body.client_name, body.signer_name, body.signer_email,
                         body.agreement_id, FileStatus.DRAFT, now, now))
             record_event(db, identifier, "created", at=now)
@@ -71,7 +72,7 @@ def create_files_router(storage: Storage) -> APIRouter:
     @router.get("")
     def list_files():
         with storage.database() as db:
-            return [public_file(row) for row in db.execute("SELECT * FROM files ORDER BY created_at DESC, rowid DESC")]
+            return [public_file(row) for row in db.execute("SELECT * FROM files ORDER BY created_at DESC, seq DESC")]
 
     @router.get("/{identifier}")
     def get_file(identifier: str):
@@ -82,15 +83,15 @@ def create_files_router(storage: Storage) -> APIRouter:
     def update_file(identifier: str, body: FileUpdate):
         changes = body.model_dump(exclude_unset=True, exclude={"version"})
         with storage.database() as db:
-            db.execute("BEGIN IMMEDIATE")
+            write_lock(db)
             current = public_file(fetch(db, identifier))
             if current["status"] != FileStatus.DRAFT:
                 raise HTTPException(409, "Only draft files can be edited. This file has already been sent.")
             if "agreement_id" in changes:
                 require_agreement(db, changes["agreement_id"])
-            assignments = ", ".join(f"{column} = ?" for column in changes)  # columns come from the model, not the client
-            result = db.execute(f"UPDATE files SET {assignments}, version = version + 1, updated_at = ? "
-                                "WHERE id = ? AND version = ? AND status = ?",
+            assignments = ", ".join(f"{column} = %s" for column in changes)  # columns come from the model, not the client
+            result = db.execute(f"UPDATE files SET {assignments}, version = version + 1, updated_at = %s "
+                                "WHERE id = %s AND version = %s AND status = %s",
                                 (*changes.values(), utc_now(), identifier, body.version, FileStatus.DRAFT))
             if result.rowcount != 1:
                 raise HTTPException(409, "This file was changed in another tab. Reload it before editing again.")
@@ -100,12 +101,12 @@ def create_files_router(storage: Storage) -> APIRouter:
     def delete_file(identifier: str):
         try:
             with storage.database() as db:
-                db.execute("BEGIN IMMEDIATE")
+                write_lock(db)
                 current = public_file(fetch(db, identifier))
                 if current["status"] == FileStatus.SIGNED:
                     raise HTTPException(409, "Signed files are kept as a record and cannot be deleted.")
-                db.execute("DELETE FROM files WHERE id = ?", (identifier,))
-                db.execute("DELETE FROM file_events WHERE file_id = ?", (identifier,))
+                db.execute("DELETE FROM files WHERE id = %s", (identifier,))
+                db.execute("DELETE FROM file_events WHERE file_id = %s", (identifier,))
                 # An unlink error rolls the row deletion back.
                 storage.document_pdf(identifier).unlink(missing_ok=True)
         except OSError as exc:
@@ -118,7 +119,7 @@ def create_files_router(storage: Storage) -> APIRouter:
         token, target, written = new_token(), storage.document_pdf(identifier), False
         try:
             with storage.database() as db:
-                db.execute("BEGIN IMMEDIATE")  # serializes concurrent sends of the same file
+                write_lock(db)  # serializes concurrent sends of the same file
                 current = public_file(fetch(db, identifier))
                 if not can_transition(current["status"], FileStatus.SENT):
                     raise HTTPException(409, "This file has already been sent. Reissue the link to send it again.")
@@ -137,9 +138,9 @@ def create_files_router(storage: Storage) -> APIRouter:
                 target.write_bytes(content)
                 written = True
                 now = utc_now()
-                db.execute("""UPDATE files SET status = ?, document_name = ?, document_sha256 = ?, page_count = ?,
-                              marks = ?, token_hash = ?, sent_at = ?, updated_at = ?, version = version + 1
-                              WHERE id = ?""",
+                db.execute("""UPDATE files SET status = %s, document_name = %s, document_sha256 = %s, page_count = %s,
+                              marks = %s, token_hash = %s, sent_at = %s, updated_at = %s, version = version + 1
+                              WHERE id = %s""",
                            (FileStatus.SENT, agreement["name"], hashlib.sha256(content).hexdigest(), agreement["page_count"],
                             json.dumps([m for m in marks if mark_type(m) != "text"]), hash_token(token), now, now, identifier))
                 record_event(db, identifier, "sent", at=now)
@@ -155,13 +156,13 @@ def create_files_router(storage: Storage) -> APIRouter:
     def reissue_link(identifier: str):
         token = new_token()
         with storage.database() as db:
-            db.execute("BEGIN IMMEDIATE")
+            write_lock(db)
             current = public_file(fetch(db, identifier))
             if current["status"] not in LINK_STATUSES:
                 raise HTTPException(409, "Send the file first." if current["status"] == FileStatus.DRAFT
                                     else "This file is already signed; its link can no longer be used.")
             now = utc_now()
-            db.execute("UPDATE files SET token_hash = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+            db.execute("UPDATE files SET token_hash = %s, updated_at = %s, version = version + 1 WHERE id = %s",
                        (hash_token(token), now, identifier))
             record_event(db, identifier, "link_reissued", at=now)
             reissued = public_file(fetch(db, identifier))

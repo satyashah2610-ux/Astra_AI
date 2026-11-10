@@ -1,5 +1,4 @@
 import hashlib
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 
@@ -8,6 +7,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from app.main import create_app
+from tests import db
 from tests.signature_images import data_url, png_bytes
 from tests.test_agreements import mark, pdf_bytes, save, upload
 from tests.test_files import create_file, token_from
@@ -96,8 +96,7 @@ def test_signer_items_are_stored_stamped_and_listed(client, tmp_path):
     initials = png_bytes((160, 80))
     response = sign(client, auth, items=items, initials={"method": "drawn", "image": data_url(initials)}, utc_offset_minutes=0)
     assert response.status_code == 200, response.text
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        row = db.execute("SELECT items, initials_method, initials_sha256, date_text FROM signer_items WHERE file_id = ?", (sent["id"],)).fetchone()
+    row = db.row("SELECT items, initials_method, initials_sha256, date_text FROM signer_items WHERE file_id = %s", (sent["id"],))
     assert [i["id"] for i in __import__("json").loads(row[0])] == [i["id"] for i in items]
     assert row[1] == "drawn" and row[2] == hashlib.sha256(initials).hexdigest()
     assert (tmp_path / "signatures" / f"{sent['id']}-initials.png").read_bytes() == initials
@@ -116,8 +115,7 @@ def test_date_item_uses_the_signers_local_date_filled_by_the_server(client, tmp_
     _, sent, auth = send(client)
     expected = (datetime.now(timezone.utc) + timedelta(minutes=offset)).strftime("%d %b %Y")
     assert sign(client, auth, items=[signer_item(type="date", width=.15)], utc_offset_minutes=offset).status_code == 200
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        assert db.execute("SELECT date_text FROM signer_items WHERE file_id = ?", (sent["id"],)).fetchone()[0] == expected
+    assert db.value("SELECT date_text FROM signer_items WHERE file_id = %s", (sent["id"],)) == expected
 
 
 @pytest.mark.parametrize("changes", [
@@ -130,8 +128,7 @@ def test_invalid_signer_items_change_nothing(client, tmp_path, changes):
     _, sent, auth = send(client)
     assert sign(client, auth, **changes).status_code == 422
     assert client.get(f"/api/files/{sent['id']}").json()["status"] == "sent"
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        assert db.execute("SELECT COUNT(*) FROM signer_items").fetchone()[0] == 0
+    assert db.value("SELECT COUNT(*) FROM signer_items") == 0
 
 
 def test_signing_without_items_still_works_and_stores_an_empty_list(client, tmp_path):

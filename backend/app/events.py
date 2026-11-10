@@ -13,10 +13,10 @@ def request_origin(request: Request | None) -> tuple[str | None, str | None]:
 
 def record_event(db, file_id: str, event_type: str, request: Request | None = None, at: str | None = None) -> None:
     ip, user_agent = request_origin(request)
-    db.execute("INSERT INTO file_events (file_id, type, at, ip, user_agent) VALUES (?, ?, ?, ?, ?)",
+    db.execute("INSERT INTO file_events (file_id, type, at, ip, user_agent) VALUES (%s, %s, %s, %s, %s)",
                (file_id, event_type, at or utc_now(), ip, user_agent))
 
 
 def list_events(db, file_id: str) -> list[dict]:
-    rows = db.execute("SELECT type, at, ip, user_agent FROM file_events WHERE file_id = ? ORDER BY id", (file_id,))
+    rows = db.execute("SELECT type, at, ip, user_agent FROM file_events WHERE file_id = %s ORDER BY id", (file_id,))
     return [dict(row) for row in rows]

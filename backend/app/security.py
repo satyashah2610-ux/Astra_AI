@@ -87,6 +87,10 @@ class SecurityMiddleware:
             await reject(403, "Requests from other websites are not allowed.")
             return
 
+        if "\x00" in scope["path"]:  # can't name anything stored in PostgreSQL
+            await reject(404, "Not found.")
+            return
+
         small = scope["path"].startswith(self.small_body_prefixes) if self.small_body_prefixes else False
         limit = self.small_body_limit if small else self.body_limit
         message = "The request is too large." if small else self.body_limit_message

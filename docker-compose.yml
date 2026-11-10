@@ -1,0 +1,19 @@
+# Local PostgreSQL for tests and offline development (never production data).
+#   docker compose up -d
+# Then set (environment or .env.test.local):  ASTRA_TEST_DATABASE_URL=postgresql://astra:astra@127.0.0.1:54329/astra
+services:
+  postgres:
+    image: postgres:18
+    container_name: astra-postgres
+    environment:
+      POSTGRES_USER: astra
+      POSTGRES_PASSWORD: astra
+      POSTGRES_DB: astra
+    ports:
+      - "127.0.0.1:54329:5432"  # bound to this computer only
+    command: ["postgres", "-c", "fsync=off", "-c", "full_page_writes=off", "-c", "max_connections=300"]  # test speed; not for real data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astra"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

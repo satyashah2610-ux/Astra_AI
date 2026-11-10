@@ -47,11 +47,11 @@ def ensure_signed_pdf(storage: Storage, file_id: str) -> Path:
         if target.is_file():
             return target
         with storage.database() as db:
-            row = db.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+            row = db.execute("SELECT * FROM files WHERE id = %s", (file_id,)).fetchone()
             if row is None or row["status"] != FileStatus.SIGNED:
                 raise HTTPException(404, "This agreement has not been signed yet.")
-            signature = db.execute("SELECT * FROM signatures WHERE file_id = ?", (file_id,)).fetchone()
-            placed = db.execute("SELECT * FROM signer_items WHERE file_id = ?", (file_id,)).fetchone()  # absent for older signings
+            signature = db.execute("SELECT * FROM signatures WHERE file_id = %s", (file_id,)).fetchone()
+            placed = db.execute("SELECT * FROM signer_items WHERE file_id = %s", (file_id,)).fetchone()  # absent for older signings
             events = list_events(db, file_id)
         try:
             signature_png = storage.signature_png(file_id).read_bytes()

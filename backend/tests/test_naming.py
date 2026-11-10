@@ -1,4 +1,3 @@
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -42,21 +41,13 @@ def test_simultaneous_uploads_get_unique_names(tmp_path):
         assert {response.json()['name'] for response in responses} == {'Agreement', 'Agreement (1)', 'Agreement (2)', 'Agreement (3)'}
 
 
-def test_existing_duplicate_names_are_repaired_without_changing_documents(tmp_path):
+def test_the_database_itself_refuses_duplicate_names_in_any_case(tmp_path):
+    import psycopg
+    import pytest
+    from tests import db
     with TestClient(create_app(tmp_path)) as client:
-        items = [upload(client, name=name).json() for name in ['Agreement.pdf', 'Duplicate.pdf', 'Agreement (1).pdf']]
-        save(client, items[1]['id'], [mark()])
-    # Model an older installation that predates unique naming.
-    with sqlite3.connect(tmp_path / 'agreements.sqlite3') as db:
-        db.execute('DROP INDEX IF EXISTS agreements_unique_name')
-        db.execute('UPDATE agreements SET name = ? WHERE id = ?', ('Agreement', items[1]['id']))
-    for _ in range(2):
-        with TestClient(create_app(tmp_path)) as client:
-            assert client.get(f"/api/agreements/{items[0]['id']}").json()['name'] == 'Agreement'
-            duplicate = client.get(f"/api/agreements/{items[1]['id']}").json()
-            assert duplicate['name'] == 'Agreement (2)'
-            assert duplicate['marks'] == [mark()]
-            assert duplicate['version'] == 1
-            assert client.get(f"/api/agreements/{items[2]['id']}").json()['name'] == 'Agreement (1)'
-            for item in items:
-                assert client.get(f"/api/agreements/{item['id']}/pdf").status_code == 200
+        first = upload(client, name="Agreement.pdf").json()
+        second = upload(client, name="Other.pdf").json()
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        db.execute("UPDATE agreements SET name = %s WHERE id = %s", ("AGREEMENT", second["id"]))
+    assert db.value("SELECT name FROM agreements WHERE id = %s", (first["id"],)) == "Agreement"

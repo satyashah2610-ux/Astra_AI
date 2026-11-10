@@ -1,11 +1,11 @@
 import hashlib
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from tests import db
 from app.signing import CONSENT_TEXT
 from tests.signature_images import data_url, png_bytes
 from tests.test_agreements import pdf_bytes
@@ -120,9 +120,7 @@ def test_signing_records_signature_and_evidence(client, tmp_path):
     assert staff_view["status"] == "signed"
     assert staff_view["signed_at"] == response.json()["signed_at"]
     assert (tmp_path / "signatures" / f"{item['id']}.png").read_bytes() == image
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        db.row_factory = sqlite3.Row
-        row = dict(db.execute("SELECT * FROM signatures WHERE file_id = ?", (item["id"],)).fetchone())
+    row = dict(db.row("SELECT * FROM signatures WHERE file_id = %s", (item["id"],)))
     assert row["method"] == "typed"
     assert row["name"] == "Jordan A. Smith"
     assert row["image_sha256"] == hashlib.sha256(image).hexdigest()
@@ -197,8 +195,7 @@ def test_deleting_an_unsigned_file_removes_its_events(client, tmp_path):
     item, token = sent_file(client)
     client.post("/api/signing/view", headers=auth(token))
     assert client.delete(f"/api/files/{item['id']}").status_code == 204
-    with sqlite3.connect(tmp_path / "agreements.sqlite3") as db:
-        assert db.execute("SELECT COUNT(*) FROM file_events WHERE file_id = ?", (item["id"],)).fetchone()[0] == 0
+    assert db.value("SELECT COUNT(*) FROM file_events WHERE file_id = %s", (item["id"],)) == 0
     assert client.get("/api/signing", headers=auth(token)).status_code == 404
 
 

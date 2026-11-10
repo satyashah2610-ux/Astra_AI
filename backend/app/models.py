@@ -1,10 +1,17 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, StringConstraints, model_validator
 
 
 PRINTED_ENCODING = "cp1252"  # what the PDF's built-in font can draw (Western European)
 MARK_TYPES = Literal["signature", "text", "comment"]
+
+
+def no_nul(text: str) -> str:
+    """PostgreSQL text can't contain NUL characters; refuse them as invalid input instead of failing later."""
+    if "\x00" in text:
+        raise ValueError("Text can't contain NUL characters.")
+    return text
 
 
 def printable(text: str) -> str:
@@ -40,7 +47,7 @@ class SignatureMark(BaseModel):
             if self.text is not None:
                 raise ValueError("Signature boxes don't hold text.")
             return self
-        text = (self.text or "").strip()
+        text = no_nul((self.text or "").strip())
         if not text:
             raise ValueError("Text and comments can't be empty.")
         self.text = printable(text) if self.type == "text" else text
@@ -63,9 +70,9 @@ class SaveMarks(BaseModel):
         return [mark.model_dump(exclude_defaults=True) for mark in self.marks]
 
 EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=EMAIL_SHAPE)]
-Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200), AfterValidator(no_nul)]
+Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=EMAIL_SHAPE), AfterValidator(no_nul)]
+Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100), AfterValidator(no_nul)]
 
 
 class FileCreate(BaseModel):
@@ -121,7 +128,7 @@ class SignerItem(BaseModel):
             if self.text is not None:
                 raise ValueError("Only text items hold text.")
             return self
-        text = (self.text or "").strip()
+        text = no_nul((self.text or "").strip())
         if not text:
             raise ValueError("Text items can't be empty.")
         self.text = printable(text)

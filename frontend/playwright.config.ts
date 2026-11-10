@@ -9,7 +9,7 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:5174', viewport: { width: 1440, height: 1000 }, channel: 'chrome', trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   reporter: 'list',
   webServer: [
-    { command: `${python} -m uvicorn app.main:create_app --factory --app-dir backend --host 127.0.0.1 --port 8011`, cwd: root, url: 'http://127.0.0.1:8011/api/health', reuseExistingServer: false, env: { ASTRA_DATA_DIR: resolve(tmpdir(), `astra-e2e-${Date.now()}`) } },
+    { command: `${python} backend/scripts/run_e2e_backend.py`, cwd: root, url: 'http://127.0.0.1:8011/api/health', reuseExistingServer: false, env: { ASTRA_DATA_DIR: resolve(tmpdir(), `astra-e2e-${Date.now()}`) } },
     { command: 'npm run dev -- --port 5174', url: 'http://127.0.0.1:5174', reuseExistingServer: false, env: { API_TARGET: 'http://127.0.0.1:8011' } },
   ],
 });

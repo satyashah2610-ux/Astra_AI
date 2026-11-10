@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from .database import write_lock
 from .events import record_event, request_origin
 from .lifecycle import FileStatus, can_transition
 from .models import SignSubmission
@@ -53,13 +54,13 @@ def create_signing_router(storage: Storage) -> APIRouter:
 
     def lookup(db, token: str | None):
         """Resolve a link secret to its sent file. One generic 404 for every failure."""
-        row = db.execute("SELECT * FROM files WHERE token_hash = ?", (hash_token(token),)).fetchone() if token else None
+        row = db.execute("SELECT * FROM files WHERE token_hash = %s", (hash_token(token),)).fetchone() if token else None
         if row is None or row["status"] == FileStatus.DRAFT:
             raise HTTPException(404, INVALID_LINK)
         return row
 
     def reload(db, file_id):
-        return db.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+        return db.execute("SELECT * FROM files WHERE id = %s", (file_id,)).fetchone()
 
     @router.get("")
     def get_signing(x_signing_token: str | None = Header(default=None)):
@@ -69,11 +70,11 @@ def create_signing_router(storage: Storage) -> APIRouter:
     @router.post("/view")
     def mark_viewed(request: Request, x_signing_token: str | None = Header(default=None)):
         with storage.database() as db:
-            db.execute("BEGIN IMMEDIATE")
+            write_lock(db)
             row = lookup(db, x_signing_token)
             if row["status"] == FileStatus.SENT:  # only the first open counts
                 now = utc_now()
-                db.execute("UPDATE files SET status = ?, viewed_at = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+                db.execute("UPDATE files SET status = %s, viewed_at = %s, updated_at = %s, version = version + 1 WHERE id = %s",
                            (FileStatus.VIEWED, now, now, row["id"]))
                 record_event(db, row["id"], "viewed", request, now)
                 logger.info("File viewed id=%s", row["id"])
@@ -100,7 +101,7 @@ def create_signing_router(storage: Storage) -> APIRouter:
         target = initials_target = None
         try:
             with storage.database() as db:
-                db.execute("BEGIN IMMEDIATE")  # two clicks or two tabs: exactly one signature
+                write_lock(db)  # two clicks or two tabs: exactly one signature
                 row = lookup(db, x_signing_token)
                 if not can_transition(row["status"], FileStatus.SIGNED):
                     raise HTTPException(409, "This agreement has already been signed.")
@@ -113,16 +114,16 @@ def create_signing_router(storage: Storage) -> APIRouter:
                     initials_target.write_bytes(initials)
                 now = utc_now()
                 db.execute("""INSERT INTO signatures (file_id, method, name, image_sha256, consent_text, signed_at, ip, user_agent)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                              VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                            (row["id"], body.method, body.name, hashlib.sha256(image).hexdigest(), CONSENT_TEXT, now, ip, user_agent))
                 db.execute("""INSERT INTO signer_items (file_id, items, initials_method, initials_sha256, date_text)
-                              VALUES (?, ?, ?, ?, ?)""",
+                              VALUES (%s, %s, %s, %s, %s)""",
                            (row["id"], json.dumps([item.model_dump(exclude_none=True) for item in body.items]),
                             body.initials.method if body.initials else None,
                             hashlib.sha256(initials).hexdigest() if initials is not None else None,
                             signing_date(body.utc_offset_minutes)))
-                db.execute("""UPDATE files SET status = ?, signed_at = ?, updated_at = ?, version = version + 1
-                              WHERE id = ? AND status IN (?, ?)""",
+                db.execute("""UPDATE files SET status = %s, signed_at = %s, updated_at = %s, version = version + 1
+                              WHERE id = %s AND status IN (%s, %s)""",
                            (FileStatus.SIGNED, now, now, row["id"], FileStatus.SENT, FileStatus.VIEWED))
                 record_event(db, row["id"], "signed", request, now)
                 signed = signer_view(reload(db, row["id"]))
