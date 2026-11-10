@@ -12,7 +12,7 @@ async function sendFile(request: APIRequestContext, signer = 'Jordan Smith') {
   const marks = [{ id: 'box-1', page: 2, x: .1, y: .55, width: .35, height: .08 }];
   expect((await request.put(`/api/agreements/${agreement.id}/marks`, { data: { version: 0, marks } })).ok()).toBe(true);
   const file = await (await request.post('/api/files', { data: { title: 'Browser signing test', client_name: 'Smith Family', signer_name: signer, signer_email: 'jordan@example.com', agreement_id: agreement.id } })).json();
-  const sent = await (await request.post(`/api/files/${file.id}/send`)).json();
+  const sent = await (await request.post(`/api/files/${file.id}/send`, { data: { email: false } })).json();  // the link is opened directly here; emails have their own test
   return { fileId: file.id as string, path: sent.signing_path as string, agreement };
 }
 

@@ -59,8 +59,8 @@
 a.primary,a.secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
 .files-toolbar{display:flex;gap:10px;justify-content:flex-end;margin:-8px 0 16px}
 .files-workspace{grid-template-columns:290px minmax(0,1fr)}
-.status-filters{display:flex;flex-wrap:wrap;gap:5px}
-.status-filters button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font-size:11px;color:#6f7d72}
+.status-filters{display:flex;gap:4px}
+.status-filters button{flex:1 1 auto;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 6px;font-size:11px;color:#6f7d72;white-space:nowrap}
 .status-filters button[aria-pressed=true]{background:#2f5a45;border-color:#2f5a45;color:#fff}
 .file-list{list-style:none;margin:0 -8px;padding:0;display:flex;flex-direction:column;gap:4px;overflow:auto;max-height:520px}
 .file-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;border:1px solid transparent;border-radius:7px;background:none;padding:11px 10px}

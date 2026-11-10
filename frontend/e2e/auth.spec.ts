@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { PASSWORD } from './helpers';
+import { PASSWORD, signUp } from './helpers';
 
 test('create a company account, log out, log back in', async ({ page }) => {
   const email = `owner-${Date.now()}@example.com`;
@@ -15,6 +15,15 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await expect(page.getByText('Use at least 10 characters.')).toBeVisible();
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
+  // Not straight into the workspace: a confirmation, then the login form with the email filled in.
+  await expect(page.getByRole('status')).toHaveText('Account created. Log in to continue.');
+  await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
+  await expect(page.getByLabel('Work email')).toHaveValue(email);
+  const emailBox = (await page.getByLabel('Work email').boundingBox())!;
+  const passwordBox = (await page.getByLabel('Password', { exact: true }).boundingBox())!;
+  expect(Math.abs(emailBox.width - passwordBox.width)).toBeLessThan(1);  // both boxes span the form
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByText('Riverside Builders')).toBeVisible();
   await expect(page.getByLabel('Signed in as Ana Lopez')).toHaveText('AL');
 
@@ -39,8 +48,7 @@ test('another company sees none of your agreements or files', async ({ browser }
   const b = await beta.newPage();
   const stamp = Date.now();
   for (const [page, company] of [[a, 'Alpha Ltd'], [b, 'Beta Ltd']] as const) {
-    const response = await page.request.post('/api/auth/signup', { data: { company, name: 'Pat Tester', email: `${company.split(' ')[0].toLowerCase()}-${stamp}@example.com`, password: PASSWORD } });
-    expect(response.status()).toBe(201);
+    await signUp(page, company, `${company.split(' ')[0].toLowerCase()}-${stamp}@example.com`);
   }
   const pdf = await (await a.request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await a.request.post('/api/agreements', { multipart: { file: { name: 'Alpha private.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
@@ -56,7 +64,7 @@ test('another company sees none of your agreements or files', async ({ browser }
 test('a signer opens their link without any login', async ({ page, browser }) => {
   // Staff side, in its own browser context.
   const staff = await (await browser.newContext()).newPage();
-  await staff.request.post('/api/auth/signup', { data: { company: 'Link Co', name: 'Pat Tester', email: `link-${Date.now()}@example.com`, password: PASSWORD } });
+  await signUp(staff, 'Link Co', `link-${Date.now()}@example.com`);
   const pdf = await (await staff.request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await staff.request.post('/api/agreements', { multipart: { file: { name: 'Link test.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
   await staff.request.put(`/api/agreements/${agreement.id}/marks`, { data: { version: 0, marks: [{ id: 's', page: 2, x: .1, y: .55, width: .35, height: .08 }] } });
@@ -72,8 +80,7 @@ test('forgot password: request a link, open it from the email, choose a new pass
   const { readdirSync, readFileSync } = await import('node:fs');
   const { join } = await import('node:path');
   const email = `forgot-${Date.now()}@example.com`;
-  await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });
-  await page.request.post('/api/auth/logout');
+  await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });  // not logged in
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Forgot password?' }).click();
@@ -96,9 +103,10 @@ test('forgot password: request a link, open it from the email, choose a new pass
   await page.getByLabel('New password', { exact: true }).fill('a brand new passphrase');
   await page.getByLabel('Confirm new password', { exact: true }).fill('a brand new passphrase');
   await page.getByRole('button', { name: 'Save new password' }).click();
-  await expect(page.getByText('Forgot Co')).toBeVisible();  // signed in to the workspace
-
-  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page.getByRole('heading', { name: 'Password reset' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('Your password has been reset. Log in with your new password.');
+  await page.getByRole('link', { name: 'Go to log in' }).click();
+  await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('a brand new passphrase');
   await page.getByRole('button', { name: 'Log in' }).click();

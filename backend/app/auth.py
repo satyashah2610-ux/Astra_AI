@@ -29,6 +29,8 @@ NOT_LOGGED_IN = "Log in to continue."
 WRONG_LOGIN = "Email or password is incorrect."
 RESET_SENT = "If an account exists for that email, we’ve sent a link to reset the password."
 RESET_INVALID = "This reset link is invalid or has expired. Request a new one."
+ACCOUNT_CREATED = "Account created. Log in to continue."
+PASSWORD_RESET = "Your password has been reset. Log in with your new password."
 RESET_MINUTES = 60
 RESETS_PER_EMAIL_PER_HOUR = 3
 RESETS_PER_IP_PER_HOUR = 10
@@ -119,7 +121,7 @@ def create_auth(storage: Storage, email_sender=None):
         return dict(row)
 
     @router.post("/signup", status_code=201)
-    def signup(body: SignupBody, request: Request, response: Response):
+    def signup(body: SignupBody):
         organization_id, user_id, now = str(uuid4()), str(uuid4()), utc_now()
         password_hash = hash_password(body.password)
         try:
@@ -127,12 +129,10 @@ def create_auth(storage: Storage, email_sender=None):
                 db.execute("INSERT INTO organizations (id, name, created_at) VALUES (%s, %s, %s)", (organization_id, body.company, now))
                 db.execute("INSERT INTO users (id, organization_id, name, email, password_hash, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
                            (user_id, organization_id, body.name, body.email.lower(), password_hash, now))
-                start_session(db, request, response, user_id)
-                account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user_id,)).fetchone()
         except psycopg.errors.UniqueViolation as exc:
             raise HTTPException(409, "An account with this email already exists. Log in instead.") from exc
         logger.info("Account created organization=%s user=%s", organization_id, user_id)
-        return public_account(account)
+        return {"message": ACCOUNT_CREATED}  # no session: they log in next, which also confirms the password
 
     @router.post("/login")
     def login(body: LoginBody, request: Request, response: Response):
@@ -194,7 +194,7 @@ def create_auth(storage: Storage, email_sender=None):
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
     @router.post("/reset")
-    def reset(body: ResetBody, request: Request, response: Response):
+    def reset(body: ResetBody):
         password_hash = hash_password(body.password)  # hashed before taking a connection
         now = utc_now()
         with storage.database() as db:
@@ -206,10 +206,8 @@ def create_auth(storage: Storage, email_sender=None):
             user_id = used["user_id"]
             db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
             db.execute("UPDATE password_resets SET used_at = %s WHERE user_id = %s AND used_at IS NULL", (now, user_id))
-            db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # sign out everywhere else
-            start_session(db, request, response, user_id)
-            account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user_id,)).fetchone()
+            db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # signed out everywhere
         logger.info("Password reset completed user=%s", user_id)
-        return public_account(account)
+        return {"message": PASSWORD_RESET}  # no session: they log in with the new password
 
     return router, current_user

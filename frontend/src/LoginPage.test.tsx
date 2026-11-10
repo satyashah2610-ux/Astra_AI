@@ -29,7 +29,7 @@ beforeEach(() => {
     }
     if (url === '/api/auth/signup') {
       if (failSignup) return json({ detail: failSignup }, 409);
-      session = true; return json(account, 201);
+      return json({ message: 'Account created. Log in to continue.' }, 201);  // no session until they log in
     }
     if (url === '/api/auth/logout') { session = false; return json(null, 204); }
     return json({ detail: 'Unexpected' }, 500);
@@ -59,10 +59,12 @@ it('shows the server’s message when the login is wrong, and keeps the email', 
   expect(field('Password')).toHaveValue('');
 });
 
-it('creates a company account, checking the fields before sending', async () => {
+it('creates a company account, checking the fields first, then asks them to log in', async () => {
   const onSignedIn = vi.fn();
   render(<LoginPage onSignedIn={onSignedIn} />);
   await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+  expect(screen.getByText('Your clients never need an account: they sign from a secure link.')).toBeInTheDocument();
+  expect(screen.queryByText(/one account per company/i)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
   expect(screen.getByText('Enter your company name.')).toBeInTheDocument();
   expect(screen.getByText('Use at least 10 characters.')).toBeInTheDocument();
@@ -72,8 +74,15 @@ it('creates a company account, checking the fields before sending', async () => 
   await userEvent.type(field('Work email'), 'ana@riverside.example');
   await userEvent.type(field('Password'), 'correct horse battery');
   await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
-  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(account));
+  expect(await screen.findByRole('status')).toHaveTextContent('Account created. Log in to continue.');
   expect(requests.at(-1)!.body).toEqual({ company: 'Riverside Builders', name: 'Ana Lopez', email: 'ana@riverside.example', password: 'correct horse battery' });
+  expect(onSignedIn).not.toHaveBeenCalled();  // not straight into the workspace
+  expect(screen.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeInTheDocument();
+  expect(field('Work email')).toHaveValue('ana@riverside.example');  // ready to log in
+  expect(field('Password')).toHaveValue('');
+  await userEvent.type(field('Password'), 'correct horse battery');
+  await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(account));
 });
 
 it('explains an email that already has an account', async () => {
@@ -179,4 +188,21 @@ it('opens on the reset request from a /?forgot link, then removes the flag from 
   expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
   expect(window.location.search).toBe('');
   window.history.replaceState(null, '', '/');
+});
+
+it('after sign-up, a failed login replaces the "Account created" note, and a shown password is hidden again', async () => {
+  render(<LoginPage onSignedIn={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));
+  await userEvent.type(field('Company name'), 'Riverside Builders');
+  await userEvent.type(field('Your name'), 'Ana Lopez');
+  await userEvent.type(field('Work email'), 'ana@riverside.example');
+  await userEvent.type(field('Password'), 'correct horse battery');
+  await userEvent.click(screen.getByRole('button', { name: 'Show password' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Create account' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Account created');
+  expect(field('Password')).toHaveAttribute('type', 'password');  // not left revealed on the login form
+  await userEvent.type(field('Password'), 'wrong password');
+  await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();  // never both messages at once
 });

@@ -78,3 +78,15 @@ test('the Files screen works on a phone', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/files-mobile.png', fullPage: true });
 });
+
+test('the status filters fit on one line beside the file list', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Files' }).click();
+  const filters = page.getByRole('group', { name: 'Filter by status' }).getByRole('button');
+  await expect(filters).toHaveText(['All', 'Draft', 'Sent', 'Viewed', 'Signed']);
+  const group = (await page.getByRole('group', { name: 'Filter by status' }).boundingBox())!;
+  const last = (await filters.last().boundingBox())!;
+  const first = (await filters.first().boundingBox())!;
+  expect(last.y).toBe(first.y);  // one row
+  expect(last.x + last.width).toBeLessThanOrEqual(group.x + group.width + 0.5);  // and nothing spills past the column
+});
