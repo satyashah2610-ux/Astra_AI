@@ -25,7 +25,7 @@ export async function signUp(page: Page, company = 'Browser Test Co', email = `s
   const response = await page.request.post('/api/auth/signup', { data: { company, name: 'Pat Tester', email, password: PASSWORD } });
   expect(response.status()).toBe(201);
   const token = new URL(await confirmationLink(email)).hash.slice(1);
-  expect((await page.request.post('/api/auth/confirm', { data: { token } })).status()).toBe(200);
+  expect((await page.request.post('/api/auth/confirm', { data: { token, password: PASSWORD } })).status()).toBe(200);
   expect((await page.request.post('/api/auth/login', { data: { email, password: PASSWORD } })).status()).toBe(200);  // sign-up alone doesn't log in
   return { email, company };
 }

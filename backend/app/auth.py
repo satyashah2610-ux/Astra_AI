@@ -37,6 +37,8 @@ EMAIL_CONFIRMED = "Email confirmed. Log in to continue."
 CONFIRM_INVALID = "This confirmation link is invalid or has expired. Log in to send a new one."
 CONFIRM_SENT = "If that account still needs confirming, we’ve sent a new link."
 LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
+NETWORK_LOCKED = "Too many failed attempts from this network. Wait 15 minutes and try again."
+WRONG_PASSWORD = "That password doesn’t match this account."
 PASSWORD_RESET = "Your password has been reset. Log in with your new password."
 RESET_MINUTES = 60
 RESETS_PER_EMAIL_PER_HOUR = 3
@@ -158,23 +160,37 @@ def create_auth(storage: Storage, email_sender=None):
         logger.info("Account created organization=%s user=%s confirmed=%s", organization_id, user_id, not must_confirm)
         return {"message": CHECK_EMAIL if must_confirm else ACCOUNT_CREATED}  # no session: they log in next
 
+    def begin_attempt(db, email: str, ip: str | None) -> None:
+        """Count this password attempt as a failure up front (under a per-email and per-address lock), so attempts
+        running in parallel can't all pass the limit before any is recorded. A correct password clears it again."""
+        window = (datetime.now(timezone.utc) - timedelta(minutes=FAILURE_MINUTES)).isoformat()
+        db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"login-email:{email}",))
+        if ip:
+            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"login-ip:{ip}",))
+        db.execute("DELETE FROM login_failures WHERE email = %s AND at <= %s", (email, window))  # only the window counts
+        if db.execute("SELECT COUNT(*) FROM login_failures WHERE email = %s", (email,)).fetchone()[0] >= FAILURES_PER_EMAIL:
+            raise HTTPException(429, LOCKED)  # even the right password waits: no guessing on
+        if ip:
+            db.execute("DELETE FROM login_failures WHERE ip = %s AND at <= %s", (ip, window))
+            if db.execute("SELECT COUNT(*) FROM login_failures WHERE ip = %s", (ip,)).fetchone()[0] >= FAILURES_PER_IP:
+                raise HTTPException(429, NETWORK_LOCKED)  # a password reset wouldn't help with this one
+        db.execute("INSERT INTO login_failures (email, ip, at) VALUES (%s, %s, %s)", (email, ip, utc_now()))
+
+    def attempt_succeeded(db, email: str) -> None:
+        db.execute("DELETE FROM login_failures WHERE email = %s", (email,))  # the right password: earlier typos stop counting
+
     @router.post("/login")
     def login(body: LoginBody, request: Request, response: Response):
         email, ip = body.email.lower(), request_origin(request)[0]
-        window = (datetime.now(timezone.utc) - timedelta(minutes=FAILURE_MINUTES)).isoformat()
         with storage.database() as db:
-            db.execute("DELETE FROM login_failures WHERE at <= %s", (window,))  # only the window is ever counted
-            for_email = db.execute("SELECT COUNT(*) FROM login_failures WHERE email = %s", (email,)).fetchone()[0]
-            from_ip = db.execute("SELECT COUNT(*) FROM login_failures WHERE ip = %s", (ip,)).fetchone()[0] if ip else 0
-            if for_email >= FAILURES_PER_EMAIL or from_ip >= FAILURES_PER_IP:  # even the right password waits: no guessing on
-                raise HTTPException(429, LOCKED)
+            begin_attempt(db, email, ip)
             user = db.execute("SELECT id, password_hash, email_confirmed_at FROM users WHERE lower(email) = %s", (email,)).fetchone()
         # scrypt runs with no pooled connection held, so slow guesses can't exhaust the pool.
         valid = verify_password(body.password, user["password_hash"] if user else _UNKNOWN_EMAIL_HASH)
-        if user is None or not valid:  # same work and same answer whether or not the email exists
-            with storage.database() as db:
-                db.execute("INSERT INTO login_failures (email, ip, at) VALUES (%s, %s, %s)", (email, ip, utc_now()))
+        if user is None or not valid:  # same work and same answer whether or not the email exists; the failure stays recorded
             raise HTTPException(401, WRONG_LOGIN)
+        with storage.database() as db:
+            attempt_succeeded(db, email)
         if user["email_confirmed_at"] is None:  # only someone who knows the password learns this
             raise HTTPException(403, NOT_CONFIRMED)
         with storage.database() as db:
@@ -261,12 +277,25 @@ def create_auth(storage: Storage, email_sender=None):
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
     @router.post("/confirm")
-    def confirm_email(body: ConfirmBody):
+    def confirm_email(body: ConfirmBody, request: Request):
+        """Confirming needs the account's password too: someone who signed up with another person's address
+        can't get that person to confirm the account with one click."""
+        token_hash, ip = hash_session_token(body.token), request_origin(request)[0]
+        with storage.database() as db:
+            user = db.execute("""SELECT u.id, u.email, u.password_hash FROM email_confirmations c JOIN users u ON u.id = c.user_id
+                                 WHERE c.token_hash = %s AND c.used_at IS NULL AND c.expires_at > %s""",
+                              (token_hash, utc_now())).fetchone()
+            if user is None:
+                raise HTTPException(400, CONFIRM_INVALID)
+            begin_attempt(db, user["email"], ip)  # wrong passwords here count toward the same lock as logins
+        if not verify_password(body.password, user["password_hash"]):
+            raise HTTPException(401, WRONG_PASSWORD)
         now = utc_now()
         with storage.database() as db:
+            attempt_succeeded(db, user["email"])
             used = db.execute("""UPDATE email_confirmations SET used_at = %s
                                  WHERE token_hash = %s AND used_at IS NULL AND expires_at > %s RETURNING user_id""",
-                              (now, hash_session_token(body.token), now)).fetchone()  # atomic: a link works once
+                              (now, token_hash, now)).fetchone()  # atomic: a link works once
             if used is None:
                 raise HTTPException(400, CONFIRM_INVALID)
             db.execute("UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, %s) WHERE id = %s", (now, used["user_id"]))

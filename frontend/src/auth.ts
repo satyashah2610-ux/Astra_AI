@@ -13,7 +13,7 @@ export const authApi = {
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   deleteAccount: (confirm: string) => request<void>('/api/auth/account', { method: 'DELETE', headers: json, body: JSON.stringify({ confirm }) }),
   forgot: (email: string) => request<{ message: string }>('/api/auth/forgot', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
-  confirm: (token: string) => request<{ message: string }>('/api/auth/confirm', { method: 'POST', headers: json, body: JSON.stringify({ token }) }),
+  confirm: (token: string, password: string) => request<{ message: string }>('/api/auth/confirm', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
   resendConfirmation: (email: string) => request<{ message: string }>('/api/auth/resend-confirmation', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
   reset: (token: string, password: string) => request<{ message: string }>('/api/auth/reset', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
 };

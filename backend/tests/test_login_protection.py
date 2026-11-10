@@ -12,6 +12,7 @@ from tests.staff import PASSWORD
 
 EMAIL = "ana@riverside.example"
 LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
+NETWORK_LOCKED = "Too many failed attempts from this network. Wait 15 minutes and try again."
 CHECK_EMAIL = "Account created. Check your email for a link to confirm your address, then log in."
 NOT_CONFIRMED = "Confirm your email address first: use the link we sent you, or send a new one."
 CONFIRMED = "Email confirmed. Log in to continue."
@@ -53,8 +54,8 @@ def confirm_token(email):
     return match.group(1)
 
 
-def confirm(client, token):
-    return client.post("/api/auth/confirm", json={"token": token})
+def confirm(client, token, password=PASSWORD):
+    return client.post("/api/auth/confirm", json={"token": token, "password": password})
 
 
 def confirmed_account(client, outbox, email=EMAIL):
@@ -90,7 +91,7 @@ def test_successful_logins_do_not_count(client, outbox):
         assert login(client, "wrong password!!").status_code == 401
     for _ in range(3):
         assert login(client).status_code == 200
-    assert db.value("SELECT COUNT(*) FROM login_failures") == 4
+    assert db.value("SELECT COUNT(*) FROM login_failures") == 0  # a good login records nothing and clears earlier typos
 
 
 def test_failures_older_than_15_minutes_expire(client, outbox):
@@ -105,7 +106,8 @@ def test_twenty_failures_from_one_address_lock_that_address(client, outbox):
     confirmed_account(client, outbox)
     for n in range(20):
         assert login(client, email=f"guess{n}@riverside.example").status_code == 401
-    assert login(client).status_code == 429  # even a real account, from this address
+    response = login(client)
+    assert response.status_code == 429 and response.json()["detail"] == NETWORK_LOCKED  # a reset wouldn't help here
     assert db.value("SELECT COUNT(*) FROM login_failures WHERE email = %s", (EMAIL,)) == 0
 
 
@@ -184,6 +186,48 @@ def test_without_email_configured_accounts_are_confirmed_at_once(tmp_path):
 
 def test_the_new_endpoints_take_only_small_requests_and_no_login(client):
     big = "x" * (2 * 1024 * 1024)
-    assert client.post("/api/auth/confirm", json={"token": big}).status_code == 413
+    assert client.post("/api/auth/confirm", json={"token": big, "password": PASSWORD}).status_code == 413
     assert client.post("/api/auth/resend-confirmation", json={"email": "a@b.co", "pad": big}).status_code == 413
-    assert client.post("/api/auth/confirm", json={"token": "short"}).status_code == 422
+    assert client.post("/api/auth/confirm", json={"token": "short", "password": PASSWORD}).status_code == 422
+
+
+# --- code review regressions ----------------------------------------------------------------------
+
+def test_parallel_guesses_cannot_get_past_the_limit(client, outbox):
+    """Each attempt is counted before the (slow) password check, under a per-email lock."""
+    from concurrent.futures import ThreadPoolExecutor
+    confirmed_account(client, outbox)
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        codes = list(pool.map(lambda _: login(client, "wrong password!!").status_code, range(10)))
+    assert codes.count(401) == 5 and codes.count(429) == 5
+    assert db.value("SELECT COUNT(*) FROM login_failures WHERE email = %s", (EMAIL,)) == 5
+
+
+def test_a_successful_login_clears_earlier_failures(client, outbox):
+    confirmed_account(client, outbox)
+    for _ in range(4):
+        login(client, "wrong password!!")
+    assert login(client).status_code == 200
+    for _ in range(4):
+        assert login(client, "wrong password!!").status_code == 401
+    assert login(client).status_code == 200  # 4 since the last good login, not 8
+
+
+def test_confirming_needs_the_accounts_password(client, outbox):
+    """Someone who signed up with your address can't get you to confirm their account with one click."""
+    signup(client)
+    token = confirm_token(outbox.sent[0])
+    wrong = confirm(client, token, "not the password!!")
+    assert wrong.status_code == 401 and wrong.json()["detail"] == "That password doesn’t match this account."
+    assert login(client).status_code == 403  # still unconfirmed
+    assert confirm(client, token).status_code == 200  # the link still works with the right password
+    assert login(client).status_code == 200
+
+
+def test_wrong_passwords_on_the_confirm_page_count_toward_the_lock(client, outbox):
+    signup(client)
+    token = confirm_token(outbox.sent[0])
+    for _ in range(5):
+        assert confirm(client, token, "not the password!!").status_code == 401
+    locked = confirm(client, token)
+    assert locked.status_code == 429 and locked.json()["detail"] == LOCKED

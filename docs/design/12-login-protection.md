@@ -10,7 +10,7 @@ Anyone could guess passwords without limit, and anyone could sign up with an add
 
 ```
 Sign-up ──► account created, unconfirmed ──► email: /confirm-email#<token> (24 h, works once)
-Confirm page ── POST /api/auth/confirm ──► confirmed ──► "Email confirmed. Log in."
+Confirm page ── password + POST /api/auth/confirm ──► confirmed ──► "Email confirmed. Log in."
 Login ── too many recent failures? ──► 429 (before any password check)
       ── wrong email or password ──► 401, failure recorded
       ── right password, unconfirmed ──► 403 "Confirm your email first" + Send a new link
@@ -23,6 +23,8 @@ Login ── too many recent failures? ──► 429 (before any password check)
 | No account enumeration | Failures are counted for any email, existing or not; the same 429 for both | The lock doesn't reveal which emails have accounts. |
 | Recovery | A password reset clears that email's failures (and confirms the email) | The reset link proves ownership of the inbox. |
 | Confirmation gate | Can't log in until confirmed | Simple and complete: nothing can be sent from an unconfirmed address. |
+| Confirming needs the password | The confirm page asks for the account's password; wrong ones count toward the lock | Otherwise someone could sign up with your address and get you to confirm their account with one click. |
+| Counting attempts | Each attempt is recorded before the password check, under a per-email and per-address lock; a correct password clears that email's failures | Parallel guesses can't all pass the check at once; earlier typos stop counting after a good login. |
 | Unconfirmed login | 403 only after the right password; wrong passwords stay 401 | Reveals "unconfirmed" only to someone who knows the password. |
 | Resend | `POST /api/auth/resend-confirmation` always answers 202 the same; at most 3 links per account per hour | Same no-enumeration and abuse limits as forgot password. |
 | Existing accounts | Marked confirmed by the migration | They were created before this rule. |
@@ -34,7 +36,7 @@ Left for later: an unconfirmed sign-up keeps its email reserved (someone else's 
 
 **Migration `0006_login_protection.sql`:** `users.email_confirmed_at TEXT` (existing rows set to their `created_at`); `email_confirmations (token_hash PK, user_id → users ON DELETE CASCADE, created_at, expires_at, used_at)`; `login_failures (id, email, ip, at)` with indexes on `(email, at)` and `(ip, at)`.
 
-**API:** `POST /api/auth/signup` (message says to check the email when a link was sent); `POST /api/auth/login` (429 / 403 as above); `POST /api/auth/confirm {token}` (200, or 400 for invalid/expired/used); `POST /api/auth/resend-confirmation {email}` (202). `POST /api/auth/reset` also confirms the email and clears failures.
+**API:** `POST /api/auth/signup` (message says to check the email when a link was sent); `POST /api/auth/login` (429 / 403 as above); `POST /api/auth/confirm {token, password}` (200; 400 for an invalid/expired/used link; 401 wrong password; 429 locked); `POST /api/auth/resend-confirmation {email}` (202). `POST /api/auth/reset` also confirms the email and clears failures.
 
 **Frontend:** `/confirm-email#<token>` page confirms on open and links to log in; the login page shows the 429/403 messages, with **Send a new confirmation link** for 403.
 

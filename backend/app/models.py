@@ -194,6 +194,7 @@ class ForgotBody(BaseModel):
 class ConfirmBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: Annotated[str, StringConstraints(min_length=20, max_length=200), AfterValidator(no_nul)]
+    password: Annotated[str, StringConstraints(min_length=1, max_length=200), AfterValidator(no_nul)]
 
 
 class ResetBody(BaseModel):
