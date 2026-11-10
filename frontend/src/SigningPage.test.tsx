@@ -79,6 +79,13 @@ it('loads the document, marks it viewed once and shows the consent wording from 
   expect(calls.every(call => call.token === token && !call.url.includes(token))).toBe(true);
 });
 
+it('tells the signer what is recorded before they agree', async () => {
+  render(<SigningPage token={token} />);
+  const notice = 'Your IP address, browser and signing time are recorded as part of the signing record.';
+  expect(await screen.findByText(notice)).toBeVisible();
+  expect(screen.getByLabelText(consent)).toHaveAccessibleDescription(notice);
+});
+
 it('enables signing only with a name, a signature and consent', async () => {
   render(<SigningPage token={token} />);
   const name = await screen.findByLabelText('Full name');

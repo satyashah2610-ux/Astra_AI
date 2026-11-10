@@ -93,9 +93,12 @@ test('a client draws a signature on a phone', async ({ page }) => {
   await page.screenshot({ path: 'test-results/signing-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Clear' }).click();
   await expect(sign).toBeDisabled();
-  await page.mouse.move(box.x + box.width * .1, box.y + box.height * .6);
+  // Clicking Clear can scroll the page on a phone: measure the pad again before drawing on it.
+  await pad.scrollIntoViewIfNeeded();
+  const again = (await pad.boundingBox())!;
+  await page.mouse.move(again.x + again.width * .1, again.y + again.height * .6);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * .9, box.y + box.height * .4, { steps: 15 });
+  await page.mouse.move(again.x + again.width * .9, again.y + again.height * .4, { steps: 15 });
   await page.mouse.up();
   await sign.click();
   await expect(page.getByRole('heading', { name: /You’ve signed/ })).toBeVisible();
