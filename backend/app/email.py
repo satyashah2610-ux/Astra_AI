@@ -12,6 +12,7 @@ import urllib.request
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from email.utils import formataddr, parseaddr
 from html import escape
 from pathlib import Path
 
@@ -26,6 +27,7 @@ class Email:
     html: str
     text: str
     reply_to: str | None = None
+    from_name: str | None = None  # shown instead of the configured sender's name, e.g. "Ana Lopez via Astra Sign"
 
 
 class EmailError(Exception):
@@ -36,8 +38,15 @@ class ResendSender:
     def __init__(self, api_key: str, sender: str, opener=urllib.request.urlopen):
         self._api_key, self.sender, self._open = api_key, sender, opener
 
+    def from_header(self, from_name: str | None) -> str:
+        """The configured address with this email's display name, quoted; line breaks can't add headers."""
+        if not from_name:
+            return self.sender
+        name = " ".join(from_name.split())  # removes CR/LF and other control whitespace
+        return formataddr((name, parseaddr(self.sender)[1]))
+
     def send(self, email: Email) -> None:
-        body = {"from": self.sender, "to": [email.to], "subject": email.subject, "html": email.html, "text": email.text}
+        body = {"from": self.from_header(email.from_name), "to": [email.to], "subject": email.subject, "html": email.html, "text": email.text}
         if email.reply_to:
             body["reply_to"] = email.reply_to
         request = urllib.request.Request(RESEND_URL, data=json.dumps(body).encode("utf-8"), method="POST", headers={
@@ -74,9 +83,11 @@ def sender_from_env():
     return None
 
 
-def _layout(heading: str, paragraphs: list[str], button_text: str, link: str, footer: str) -> str:
+def _layout(heading: str, paragraphs: list[str], button_text: str, link: str, footer: str, quote: str | None = None) -> str:
     safe_link = escape(link, quote=True)
     body = "".join(f'<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#33443a">{p}</p>' for p in paragraphs)
+    if quote:  # already escaped by the caller
+        body += f'<blockquote style="margin:0 0 14px;padding:10px 14px;border-left:3px solid #8fb39f;background:#f4f8f5;font-size:15px;line-height:1.6;color:#33443a">{quote}</blockquote>'
     return f"""<!doctype html><html><body style="margin:0;background:#f4f6f3;font-family:Arial,Helvetica,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border:1px solid #e1e7df;border-radius:10px">
@@ -101,3 +112,24 @@ def reset_email(to: str, name: str, link: str) -> Email:
             f"Choose a new password here (works once, expires in 1 hour):\n{link}\n\n"
             "If you didn't ask for this, you can ignore this email: your password won't change.\n")
     return Email(to=to, subject="Reset your Astra Sign password", html=html, text=text)
+
+
+def signing_email(to: str, signer_name: str, sender_name: str, sender_email: str, company: str, document_name: str,
+                  message: str | None, link: str) -> Email:
+    """The client's invitation to sign. From "<sender> via Astra Sign"; replies go to the staff member."""
+    quote = "<br>".join(escape(line) for line in message.splitlines()) if message else None
+    html = _layout(f"{escape(document_name)} is ready to sign",
+                   [f"Hi {escape(signer_name)},",
+                    f"{escape(sender_name)} at {escape(company)} sent you <strong>{escape(document_name)}</strong> to review and sign."],
+                   "Review and sign", link,
+                   "No account is needed: the link opens the document in your browser. "
+                   f"Questions? Reply to this email to reach {escape(sender_name)}.", quote=quote)
+    note = f"\n{sender_name} wrote:\n{message}\n" if message else ""
+    text = (f"Hi {signer_name},\n\n"
+            f"{sender_name} at {company} sent you {document_name} to review and sign.\n{note}\n"
+            f"Review and sign here:\n{link}\n\n"
+            "No account is needed: the link opens the document in your browser.\n"
+            f"Questions? Reply to this email to reach {sender_name}.\n")
+    # Header values: whitespace (including CR/LF) collapsed so nothing can add a header line.
+    return Email(to=to, subject=" ".join(f"{sender_name} sent you {document_name} to sign".split()), html=html, text=text,
+                 reply_to=sender_email, from_name=f"{sender_name} via Astra Sign")

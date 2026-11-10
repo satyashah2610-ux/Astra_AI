@@ -164,6 +164,15 @@ def test_certificate_page_records_the_evidence():
     assert len(image_rects(page)) == 1  # the adopted signature is shown on the certificate too
 
 
+def test_certificate_labels_signing_email_events():
+    events = EVENTS[:2] + [{"type": "email_sent", "at": "2026-11-09T10:05:01+00:00", "ip": None, "user_agent": None},
+                           {"type": "email_failed", "at": "2026-11-09T10:06:01+00:00", "ip": None, "user_agent": None}] + EVENTS[2:]
+    text = PdfReader(BytesIO(build_signed_pdf(text_pdf(pages=1), [box()], png_bytes(), certificate(events=events)))).pages[-1].extract_text()
+    text = " ".join(text.split())  # a long label wraps in its narrow column
+    assert "Email sent" in text and "Email not delivered" in text
+    assert "email_sent" not in text and "email_failed" not in text
+
+
 @pytest.mark.parametrize("size", [(20, 1000), (2000, 10)])  # extreme shapes the signing API accepts
 def test_certificate_fits_any_accepted_signature_shape(size):
     signed = PdfReader(BytesIO(build_signed_pdf(text_pdf(pages=1), [box()], png_bytes(size), certificate())))

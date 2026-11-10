@@ -81,7 +81,8 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
         with database() as db:
             return item(fetch(db, identifier, organization_id))
 
-    auth_router, current_user = create_auth(storage, email_sender if email_sender is not None else sender_from_env())
+    sender = email_sender if email_sender is not None else sender_from_env()
+    auth_router, current_user = create_auth(storage, sender)
     Staff = Depends(current_user)  # every staff endpoint needs a logged-in user; signing endpoints don't
 
     app = FastAPI(title="Astra Sign", version="0.1.0", lifespan=lifespan)
@@ -188,7 +189,7 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
         return updated
 
     app.include_router(auth_router)
-    app.include_router(create_files_router(storage, current_user))
+    app.include_router(create_files_router(storage, current_user, sender))
     app.include_router(create_signing_router(storage))
 
     @app.get("/api/sample-agreement.pdf")

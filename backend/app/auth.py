@@ -6,7 +6,6 @@ import base64
 import hashlib
 import hmac
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -17,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from .database import utc_now
 from .email import EmailError, reset_email
 from .events import request_origin
-from .security import UNKNOWN_HOST, parse_host
+from .links import app_url, secure_cookies
 from .models import ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
@@ -92,9 +91,6 @@ def create_auth(storage: Storage, email_sender=None):
     """The /api/auth router and the `current_user` dependency every staff endpoint uses."""
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-    def secure_cookies(request: Request) -> bool:
-        return request.url.scheme == "https" or os.environ.get("ASTRA_SECURE_COOKIES") == "1"
-
     def set_session_cookie(request: Request, response: Response, token: str) -> None:
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
                             secure=secure_cookies(request), path="/")
@@ -164,21 +160,6 @@ def create_auth(storage: Storage, email_sender=None):
     @router.get("/me")
     def me(account: dict = Depends(current_user)):
         return public_account(account)
-
-    def app_url(request: Request) -> str:
-        """Where links in emails point: ASTRA_APP_URL, or this request's host rebuilt from its checked parts.
-        Never the raw Host header: anything but a clean host[:port] is refused, so a link can't be pointed elsewhere.
-        Behind a TLS-terminating proxy (ASTRA_SECURE_COOKIES=1) the request arrives as http, but the link must be https."""
-        configured = os.environ.get("ASTRA_APP_URL", "").strip().rstrip("/")
-        if configured:
-            return configured
-        parsed = parse_host(request.headers.get("host", ""))
-        if parsed is None:  # the middleware already refuses these; never build a link from one
-            raise HTTPException(400, UNKNOWN_HOST)
-        name, port = parsed
-        host = f"[{name}]" if ":" in name else name
-        scheme = "https" if secure_cookies(request) else request.url.scheme
-        return f"{scheme}://{host}{'' if port is None else f':{port}'}"
 
     def deliver(email) -> None:
         """Runs after the response is sent, so a known email isn't slower to answer than an unknown one."""

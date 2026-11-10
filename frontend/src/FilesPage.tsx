@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, FileSignature, Link2, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import type { Agreement } from './api';
 import FileForm, { type FormAction } from './FileForm';
-import { EVENT_LABELS, fileApi, signingUrl, STATUS_LABELS, type FileEvent, type FileItem, type FileStatus, type FileValues } from './files';
+import { EVENT_LABELS, fileApi, signingUrl, STATUS_LABELS, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
 
 type Mode = 'view' | 'create' | 'edit';
 type Confirm = null | 'reissue' | 'delete';
 const FILTERS: ('all' | FileStatus)[] = ['all', 'draft', 'sent', 'viewed', 'signed'];
+const EMAIL_CHECK_MS = 2500;  // the email goes out after the send answers: look at the timeline again shortly after
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
 /** The Files tab: one file per job; create, send, track and collect the signed agreement. */
@@ -17,7 +18,10 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   const [mode, setMode] = useState<Mode>('view');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [links, setLinks] = useState<Record<string, string>>({});
+  const [links, setLinks] = useState<Record<string, { url: string; email: EmailResult }>>({});
+  const [emailLink, setEmailLink] = useState(true);
+  const [eventsCheck, setEventsCheck] = useState(0);
+  const emailCheck = useRef<number | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | FileStatus>('all');
@@ -52,12 +56,16 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
     let live = true;
     fileApi.events(selected.id).then(list => { if (live) setEvents(list); }).catch(() => { if (live) setEvents([]); });
     return () => { live = false; };
-  }, [selected?.id, selected?.version, selected?.status]);
+  }, [selected?.id, selected?.version, selected?.status, eventsCheck]);
+  useEffect(() => () => window.clearTimeout(emailCheck.current), []);
   useEffect(() => { if (confirm) confirmDialog.current?.showModal?.(); }, [confirm]);
-  useEffect(() => { setCopied(false); setMode(current => current === 'edit' ? 'view' : current); }, [selectedId]);
+  useEffect(() => { setCopied(false); setEmailLink(true); setMode(current => current === 'edit' ? 'view' : current); }, [selectedId]);
 
   function replace(file: FileItem) { changes.current += 1; setFiles(current => current.some(f => f.id === file.id) ? current.map(f => f.id === file.id ? file : f) : [file, ...current]); }
-  function remember(file: FileItem, path: string) { replace(file); setLinks(current => ({ ...current, [file.id]: signingUrl(window.location.origin, path) })); setCopied(false); }
+  function remember({ file, signing_path, email }: SentFile) {
+    replace(file); setLinks(current => ({ ...current, [file.id]: { url: signingUrl(window.location.origin, signing_path), email } })); setCopied(false);
+    if (email === 'sending') { window.clearTimeout(emailCheck.current); emailCheck.current = window.setTimeout(() => setEventsCheck(n => n + 1), EMAIL_CHECK_MS); }
+  }
   async function run(action: () => Promise<void>) {
     setBusy(true); setError('');
     try { await action(); }
@@ -65,14 +73,14 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
     finally { setBusy(false); }
   }
 
-  const submit = (values: FileValues, action: FormAction) => run(async () => {
+  const submit = (values: FileValues, action: FormAction, email: boolean) => run(async () => {
     if (action === 'save' && selected) { replace(await fileApi.update(selected.id, selected.version, values)); setMode('view'); return; }
     const created = await fileApi.create(values);
     replace(created); setSelectedId(created.id); setMode('view');
-    if (action === 'send') { const sent = await fileApi.send(created.id); remember(sent.file, sent.signing_path); }
+    if (action === 'send') remember(await fileApi.send(created.id, email));
   });
-  const send = () => selected && run(async () => { const sent = await fileApi.send(selected.id); remember(sent.file, sent.signing_path); });
-  const reissue = () => selected && run(async () => { setConfirm(null); const sent = await fileApi.reissue(selected.id); remember(sent.file, sent.signing_path); });
+  const send = () => selected && run(async () => { remember(await fileApi.send(selected.id, emailLink)); });
+  const reissue = () => selected && run(async () => { setConfirm(null); remember(await fileApi.reissue(selected.id, emailLink)); });
   const remove = () => selected && run(async () => {
     const id = selected.id;
     try { await fileApi.remove(id); }
@@ -115,8 +123,8 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
       </aside>
 
       <div className="file-detail">
-        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action) => void submit(values, action)} onCancel={() => setMode('view')}
-          initial={mode === 'edit' && selected ? { title: selected.title, client_name: selected.client_name, signer_name: selected.signer_name, signer_email: selected.signer_email, agreement_id: selected.agreement_id } : undefined} />
+        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, email) => void submit(values, action, email)} onCancel={() => setMode('view')}
+          initial={mode === 'edit' && selected ? { title: selected.title, client_name: selected.client_name, signer_name: selected.signer_name, signer_email: selected.signer_email, agreement_id: selected.agreement_id, message: selected.message ?? '' } : undefined} />
         : !selected ? <div className="empty-state files-empty"><span className="large-icon"><FileSignature size={30} /></span><span className="tag">ONE FILE PER JOB</span><h2>No files yet</h2>
             <p>Create a file for each new job. Astra Sign sends the client your agreement<br />and keeps the signed copy with the file.</p>
             <button className="primary" onClick={startCreate}><Plus size={16} />New file</button></div>
@@ -129,6 +137,7 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
             <div><dt>Client</dt><dd><span>{selected.client_name}</span></dd></div>
             <div><dt>Signer</dt><dd><span>{selected.signer_name}</span><span className="muted">{selected.signer_email}</span></dd></div>
             <div><dt>Agreement</dt><dd><span>{agreementName(selected)}</span>{selected.field_count > 0 && <span className="muted">{selected.field_count} signature {selected.field_count === 1 ? 'box' : 'boxes'}</span>}</dd></div>
+            {selected.message && <div><dt>Message</dt><dd><span className="file-message">{selected.message}</span></dd></div>}
             {selected.sent_at && <div><dt>Sent</dt><dd><span>{when(selected.sent_at)}</span></dd></div>}
             {selected.signed_at && <div><dt>Signed</dt><dd><span>{when(selected.signed_at)}</span></dd></div>}
           </dl>
@@ -136,23 +145,27 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
           <div className="file-actions">
             {selected.status === 'draft' && <>
               <button className="primary" disabled={busy} onClick={() => void send()}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Send for signature</button>
-              <button className="secondary" disabled={busy} onClick={() => { setError(''); setMode('edit'); }}><Pencil size={15} />Edit</button></>}
-            {(selected.status === 'sent' || selected.status === 'viewed') && <button className="secondary" disabled={busy} onClick={() => setConfirm('reissue')}><RotateCcw size={15} />Reissue link</button>}
+              <button className="secondary" disabled={busy} onClick={() => { setError(''); setMode('edit'); }}><Pencil size={15} />Edit</button>
+              <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label></>}
+            {(selected.status === 'sent' || selected.status === 'viewed') && <button className="secondary" disabled={busy} onClick={() => { setEmailLink(true); setConfirm('reissue'); }}><RotateCcw size={15} />Reissue link</button>}
             {selected.status === 'signed' && <a className="primary" href={fileApi.signedPdfUrl(selected.id)} download><Download size={15} />Download signed PDF</a>}
             {selected.status !== 'signed' && <button className="delete-agreement" disabled={busy} onClick={() => setConfirm('delete')}><Trash2 size={15} />Delete file</button>}
           </div>
 
           {link && selected.status !== 'signed' && <div className="link-panel">
             <label htmlFor="signing-link"><Link2 size={14} />Signing link</label>
-            <div className="link-row"><input id="signing-link" readOnly value={link} onFocus={e => e.target.select()} />
-              <button className="primary" onClick={() => void copy(link)}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? 'Copied' : 'Copy link'}</button></div>
-            <p>Send this link to {selected.signer_name} by email or message. It is shown only now; if it gets lost, reissue a new link.</p>
+            <div className="link-row"><input id="signing-link" readOnly value={link.url} onFocus={e => e.target.select()} />
+              <button className="primary" onClick={() => void copy(link.url)}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? 'Copied' : 'Copy link'}</button></div>
+            {link.email === 'sending' ? <p>Emailing this link to {selected.signer_name} at {selected.signer_email}. The timeline shows when it’s delivered. You can also copy it: it is shown only now; if it gets lost, reissue a new link.</p>
+              : link.email === 'limit_reached' ? <p>Your company has reached today’s daily email limit, so send this link to {selected.signer_name} yourself. It is shown only now; if it gets lost, reissue a new link.</p>
+              : link.email === 'not_configured' ? <p>Email isn’t set up for this app, so send this link to {selected.signer_name} yourself. It is shown only now; if it gets lost, reissue a new link.</p>
+              : <p>Send this link to {selected.signer_name} by email or message. It is shown only now; if it gets lost, reissue a new link.</p>}
           </div>}
           {!link && (selected.status === 'sent' || selected.status === 'viewed') && <p className="muted link-hint">Waiting for {selected.signer_name} to sign. Lost the link? Reissue a new one.</p>}
 
           <section className="timeline-section"><h3>Timeline</h3>
             <ol className="timeline" aria-label="Timeline">{events.map((event, index) => <li key={index} className={event.type}>
-              <strong>{EVENT_LABELS[event.type] ?? event.type}</strong><span>{when(event.at)}</span>{event.ip && <span className="muted">IP {event.ip}</span>}
+              <strong>{EVENT_LABELS[event.type] ?? event.type}</strong><span>{when(event.at)}</span>{event.detail && <span className="muted">to {event.detail}</span>}{event.ip && <span className="muted">IP {event.ip}</span>}
             </li>)}</ol>
           </section>
         </article>}
@@ -161,7 +174,8 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
 
     {confirm && selected && <dialog ref={confirmDialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); if (!busy) setConfirm(null); }} aria-labelledby="file-confirm-title">
       {confirm === 'reissue'
-        ? <><h2 id="file-confirm-title">Make a new signing link?</h2><p>The link already sent to {selected.signer_name} will stop working. You will need to send them the new one.</p></>
+        ? <><h2 id="file-confirm-title">Make a new signing link?</h2><p>The link already sent to {selected.signer_name} will stop working.</p>
+          <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the new link to the signer</label></>
         : <><h2 id="file-confirm-title">Delete file?</h2><p>Permanently delete <strong>{selected.title}</strong>{selected.status !== 'draft' ? ' and stop its signing link from working' : ''}? This cannot be undone.</p></>}
       <div className="dialog-actions">
         <button autoFocus className="secondary" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>

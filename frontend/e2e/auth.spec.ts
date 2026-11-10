@@ -83,9 +83,11 @@ test('forgot password: request a link, open it from the email, choose a new pass
 
   // Read the emailed link from the test outbox.
   const outbox = process.env.ASTRA_E2E_OUTBOX!;
-  await expect.poll(() => readdirSync(outbox).filter(name => name.endsWith('.json')).length, { timeout: 10000 }).toBeGreaterThan(0);
-  const messages = readdirSync(outbox).sort().map(name => JSON.parse(readFileSync(join(outbox, name), 'utf-8')));
-  const mine = messages.filter(message => message.to === email).at(-1);
+  // Other tests' emails (e.g. signing links) share the outbox: wait for one to this account.
+  const toMe = () => readdirSync(outbox).filter(name => name.endsWith('.json')).sort()
+    .map(name => JSON.parse(readFileSync(join(outbox, name), 'utf-8'))).filter(message => message.to === email);
+  await expect.poll(() => toMe().length, { timeout: 10000 }).toBeGreaterThan(0);
+  const mine = toMe().at(-1);
   expect(mine.subject).toBe('Reset your Astra Sign password');
   const link = /\/reset-password#[A-Za-z0-9_-]{43,}/.exec(mine.text)![0];
 

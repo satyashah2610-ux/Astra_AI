@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Loader2, Save, Send } from 'lucide-react';
 import type { Agreement } from './api';
-import { cleanFileValues, sendable, validateFile, type FieldErrors, type FileValues } from './files';
+import { cleanFileValues, MAX_MESSAGE, sendable, validateFile, type FieldErrors, type FileValues } from './files';
 
 export type FormAction = 'send' | 'draft' | 'save';
 type Props = {
@@ -9,12 +9,12 @@ type Props = {
   initial?: FileValues;
   mode: 'create' | 'edit';
   busy: boolean;
-  onSubmit: (values: FileValues, action: FormAction) => void;
+  onSubmit: (values: FileValues, action: FormAction, emailLink: boolean) => void;
   onCancel: () => void;
 };
 
-const EMPTY: FileValues = { title: '', client_name: '', signer_name: '', signer_email: '', agreement_id: '' };
-const FIELDS: { key: Exclude<keyof FileValues, 'agreement_id'>; label: string; type?: string; autoComplete?: string; hint?: string }[] = [
+const EMPTY: FileValues = { title: '', client_name: '', signer_name: '', signer_email: '', agreement_id: '', message: '' };
+const FIELDS: { key: Exclude<keyof FileValues, 'agreement_id' | 'message'>; label: string; type?: string; autoComplete?: string; hint?: string }[] = [
   { key: 'title', label: 'File name or reference', hint: 'How your team refers to this job, e.g. “Smith – kitchen remodel”.' },
   { key: 'client_name', label: 'Client name', autoComplete: 'organization' },
   { key: 'signer_name', label: 'Signer name', autoComplete: 'name' },
@@ -25,6 +25,7 @@ const FIELDS: { key: Exclude<keyof FileValues, 'agreement_id'>; label: string; t
 export default function FileForm({ agreements, initial, mode, busy, onSubmit, onCancel }: Props) {
   const [values, setValues] = useState<FileValues>(initial ?? { ...EMPTY, agreement_id: agreements.find(sendable)?.id ?? '' });
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [emailLink, setEmailLink] = useState(true);
   const anySendable = agreements.some(sendable);
   const firstReady = agreements.find(sendable)?.id;
 
@@ -36,7 +37,7 @@ export default function FileForm({ agreements, initial, mode, busy, onSubmit, on
     event?.preventDefault();
     const found = validateFile(values, agreements);
     setErrors(found);
-    if (Object.keys(found).length === 0) onSubmit(cleanFileValues(values), action);
+    if (Object.keys(found).length === 0) onSubmit(cleanFileValues(values), action, emailLink);
   }
   const set = (key: keyof FileValues, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
 
@@ -63,6 +64,14 @@ export default function FileForm({ agreements, initial, mode, busy, onSubmit, on
       </select>
       {errors.agreement_id && <small className="field-error" id="file-agreement_id-error">{errors.agreement_id}</small>}
     </div>
+    <div className={`form-field ${errors.message ? 'invalid' : ''}`}>
+      <label htmlFor="file-message">Personal message (optional)</label>
+      <textarea id="file-message" rows={4} value={values.message} maxLength={MAX_MESSAGE} disabled={busy} aria-invalid={Boolean(errors.message)}
+        aria-describedby={errors.message ? 'file-message-error' : 'file-message-hint'} onChange={e => set('message', e.target.value)} />
+      {errors.message ? <small className="field-error" id="file-message-error">{errors.message}</small>
+        : <small className="field-hint" id="file-message-hint">Shown in the email to the signer, e.g. “Hi Jordan, here’s the agreement we discussed.”</small>}
+    </div>
+    {mode === 'create' && <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label>}
     <div className="form-actions">
       <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       {mode === 'create'
