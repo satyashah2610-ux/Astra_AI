@@ -12,10 +12,12 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 
 from .database import utc_now
-from .models import LoginBody, SignupBody
+from .email import EmailError, reset_email
+from .events import request_origin
+from .models import ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
 logger = logging.getLogger("astrasign.auth")
@@ -25,6 +27,11 @@ SESSION_DAYS = 14
 SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}  # memory-hard: about 16 MB and tens of milliseconds per guess
 NOT_LOGGED_IN = "Log in to continue."
 WRONG_LOGIN = "Email or password is incorrect."
+RESET_SENT = "If an account exists for that email, we’ve sent a link to reset the password."
+RESET_INVALID = "This reset link is invalid or has expired. Request a new one."
+RESET_MINUTES = 60
+RESETS_PER_EMAIL_PER_HOUR = 3
+RESETS_PER_IP_PER_HOUR = 10
 
 
 # --- passwords --------------------------------------------------------------------------------------
@@ -80,7 +87,7 @@ ACCOUNT_QUERY = """SELECT u.id AS user_id, u.name, u.email, u.organization_id, o
                    FROM users u JOIN organizations o ON o.id = u.organization_id"""
 
 
-def create_auth(storage: Storage):
+def create_auth(storage: Storage, email_sender=None):
     """The /api/auth router and the `current_user` dependency every staff endpoint uses."""
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -155,6 +162,63 @@ def create_auth(storage: Storage):
 
     @router.get("/me")
     def me(account: dict = Depends(current_user)):
+        return public_account(account)
+
+    def app_url(request: Request) -> str:
+        """Where links in emails point: ASTRA_APP_URL, or this request's host (already checked against the allow-list).
+        Behind a TLS-terminating proxy (ASTRA_SECURE_COOKIES=1) the request arrives as http, but the link must be https."""
+        configured = os.environ.get("ASTRA_APP_URL", "").strip().rstrip("/")
+        scheme = "https" if secure_cookies(request) else request.url.scheme
+        return configured or f"{scheme}://{request.headers.get('host', '')}"
+
+    def deliver(email) -> None:
+        """Runs after the response is sent, so a known email isn't slower to answer than an unknown one."""
+        if email_sender is None:
+            logger.warning("Password reset requested but email is not configured (RESEND_API_KEY / ASTRA_EMAIL_FROM)")
+            return
+        try:
+            email_sender.send(email)
+        except EmailError as exc:
+            logger.warning("Password reset email could not be sent: %s", exc)
+
+    @router.post("/forgot", status_code=202)
+    def forgot(body: ForgotBody, request: Request, background: BackgroundTasks):
+        email, ip, now = body.email.lower(), request_origin(request)[0], utc_now()
+        hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        with storage.database() as db:
+            db.execute("DELETE FROM password_reset_requests WHERE at <= %s", (hour_ago,))  # only the last hour is ever counted
+            from_ip = db.execute("SELECT COUNT(*) FROM password_reset_requests WHERE ip = %s AND at > %s", (ip, hour_ago)).fetchone()[0]
+            for_email = db.execute("SELECT COUNT(*) FROM password_reset_requests WHERE email = %s AND at > %s", (email, hour_ago)).fetchone()[0]
+            db.execute("INSERT INTO password_reset_requests (ip, email, at) VALUES (%s, %s, %s)", (ip, email, now))
+            user = db.execute("SELECT id, name, email FROM users WHERE lower(email) = %s", (email,)).fetchone()
+            if user and from_ip < RESETS_PER_IP_PER_HOUR and for_email < RESETS_PER_EMAIL_PER_HOUR:
+                token = new_session_token()
+                expires = (datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTES)).isoformat()
+                db.execute("DELETE FROM password_resets WHERE user_id = %s AND (used_at IS NOT NULL OR expires_at <= %s)",
+                           (user["id"], now))  # dead links are never needed again
+                db.execute("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (%s, %s, %s, %s)",
+                           (hash_session_token(token), user["id"], now, expires))
+                background.add_task(deliver, reset_email(user["email"], user["name"], f"{app_url(request)}/reset-password#{token}"))
+                logger.info("Password reset link issued user=%s", user["id"])
+        return {"message": RESET_SENT}  # identical for every email, sent or not
+
+    @router.post("/reset")
+    def reset(body: ResetBody, request: Request, response: Response):
+        password_hash = hash_password(body.password)  # hashed before taking a connection
+        now = utc_now()
+        with storage.database() as db:
+            used = db.execute("""UPDATE password_resets SET used_at = %s
+                                 WHERE token_hash = %s AND used_at IS NULL AND expires_at > %s RETURNING user_id""",
+                              (now, hash_session_token(body.token), now)).fetchone()  # atomic: a link works once
+            if used is None:
+                raise HTTPException(400, RESET_INVALID)
+            user_id = used["user_id"]
+            db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+            db.execute("UPDATE password_resets SET used_at = %s WHERE user_id = %s AND used_at IS NULL", (now, user_id))
+            db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # sign out everywhere else
+            start_session(db, request, response, user_id)
+            account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user_id,)).fetchone()
+        logger.info("Password reset completed user=%s", user_id)
         return public_account(account)
 
     return router, current_user

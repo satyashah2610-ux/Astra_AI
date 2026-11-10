@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, Response
 from pypdf import PdfReader
 from .auth import create_auth
 from .database import write_lock
+from .email import sender_from_env
 from .models import SaveMarks
 from .files import create_files_router
 from .lifecycle import FileStatus
@@ -49,7 +50,7 @@ def validate_pdf(content: bytes) -> int:
         raise HTTPException(400, "This PDF could not be read. Export a new PDF and try again.") from exc
 
 
-def create_app(data_dir: Path | None = None, database_url: str | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None, database_url: str | None = None, email_sender=None) -> FastAPI:
     load_env_files()  # local development: .env.local / .env fill in missing settings, never override real ones
     url = database_url or os.environ.get("DATABASE_URL")
     if not url:
@@ -80,7 +81,7 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
         with database() as db:
             return item(fetch(db, identifier, organization_id))
 
-    auth_router, current_user = create_auth(storage)
+    auth_router, current_user = create_auth(storage, email_sender if email_sender is not None else sender_from_env())
     Staff = Depends(current_user)  # every staff endpoint needs a logged-in user; signing endpoints don't
 
     app = FastAPI(title="Astra Sign", version="0.1.0", lifespan=lifespan)

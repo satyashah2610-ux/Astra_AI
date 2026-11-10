@@ -164,13 +164,27 @@ class SignSubmission(BaseModel):
         return self
 
 
+Password = Annotated[str, StringConstraints(min_length=10, max_length=200), AfterValidator(no_nul)]
+
+
 class SignupBody(BaseModel):
     """A new company and its first staff member."""
     model_config = ConfigDict(extra="forbid")
     company: Name
     name: Name
     email: Email
-    password: Annotated[str, StringConstraints(min_length=10, max_length=200), AfterValidator(no_nul)]
+    password: Password
+
+
+class ForgotBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: Email
+
+
+class ResetBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: Annotated[str, StringConstraints(min_length=20, max_length=200), AfterValidator(no_nul)]
+    password: Password
 
 
 class LoginBody(BaseModel):

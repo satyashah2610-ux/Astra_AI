@@ -67,3 +67,44 @@ test('a signer opens their link without any login', async ({ page, browser }) =>
   await expect(page.getByRole('heading', { name: 'Link test' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toHaveCount(0);
 });
+
+test('forgot password: request a link, open it from the email, choose a new password', async ({ page }) => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const email = `forgot-${Date.now()}@example.com`;
+  await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });
+  await page.request.post('/api/auth/logout');
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Forgot password?' }).click();
+  await page.getByLabel('Work email').fill(email);
+  await page.getByRole('button', { name: 'Send reset link' }).click();
+  await expect(page.getByRole('status')).toContainText('If an account exists for that email');
+
+  // Read the emailed link from the test outbox.
+  const outbox = process.env.ASTRA_E2E_OUTBOX!;
+  await expect.poll(() => readdirSync(outbox).filter(name => name.endsWith('.json')).length, { timeout: 10000 }).toBeGreaterThan(0);
+  const messages = readdirSync(outbox).sort().map(name => JSON.parse(readFileSync(join(outbox, name), 'utf-8')));
+  const mine = messages.filter(message => message.to === email).at(-1);
+  expect(mine.subject).toBe('Reset your Astra Sign password');
+  const link = /\/reset-password#[A-Za-z0-9_-]{43,}/.exec(mine.text)![0];
+
+  await page.goto(link);
+  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
+  await page.getByLabel('New password', { exact: true }).fill('a brand new passphrase');
+  await page.getByLabel('Confirm new password', { exact: true }).fill('a brand new passphrase');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  await expect(page.getByText('Forgot Co')).toBeVisible();  // signed in to the workspace
+
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill('a brand new passphrase');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByText('Forgot Co')).toBeVisible();
+
+  await page.goto(link);  // the link works only once
+  await page.getByLabel('New password', { exact: true }).fill('another new passphrase');
+  await page.getByLabel('Confirm new password', { exact: true }).fill('another new passphrase');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  await expect(page.getByRole('alert')).toContainText('invalid or has expired');
+});

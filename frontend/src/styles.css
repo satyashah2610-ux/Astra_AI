@@ -167,3 +167,5 @@ a.primary,a.secondary{display:inline-flex;align-items:center;justify-content:cen
 @media(max-width:600px){.account-text{display:none}.auth-card{padding:24px 18px}}
 .auth-card.outage{align-items:center;text-align:center;color:#8a5a12}
 .auth-card.outage h1{color:var(--ink)}
+.forgot-link{align-self:flex-end;font-size:12px;margin-top:-6px}
+.sent-note{background:#f0f6ef;border:1px solid #d3e4d4;border-radius:7px;padding:12px 14px;color:#2f5a45}

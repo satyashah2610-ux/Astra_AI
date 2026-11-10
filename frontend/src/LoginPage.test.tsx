@@ -145,3 +145,38 @@ it('treats a network failure the same way', async () => {
   render(<StaffGate />);
   expect(await screen.findByRole('heading', { name: 'Can’t reach Astra Sign' })).toBeInTheDocument();
 });
+
+// --- forgot password ---------------------------------------------------------------------------------
+
+it('sends a reset link from the login page and shows the same confirmation for any email', async () => {
+  const forgotCalls: any[] = [];
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+    if (url === '/api/auth/forgot') {
+      forgotCalls.push(JSON.parse(options!.body as string));
+      return new Response(JSON.stringify({ message: 'If an account exists for that email, we’ve sent a link to reset the password.' }), { status: 202 });
+    }
+    return realFetch(url, options);
+  }));
+  render(<LoginPage onSignedIn={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+  expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
+  expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+  expect(forgotCalls).toHaveLength(0);
+  await userEvent.type(field('Work email'), '  ana@riverside.example ');
+  await userEvent.click(screen.getByRole('button', { name: 'Send reset link' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('If an account exists for that email');
+  expect(forgotCalls).toEqual([{ email: 'ana@riverside.example' }]);
+  await userEvent.click(screen.getByRole('button', { name: 'Back to log in' }));
+  expect(screen.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeInTheDocument();
+});
+
+it('opens on the reset request from a /?forgot link, then removes the flag from the address bar', async () => {
+  window.history.replaceState(null, '', '/?forgot');
+  render(<LoginPage onSignedIn={vi.fn()} />);
+  expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
+  expect(window.location.search).toBe('');
+  window.history.replaceState(null, '', '/');
+});

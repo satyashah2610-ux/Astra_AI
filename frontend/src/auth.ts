@@ -9,4 +9,11 @@ export const authApi = {
   login: (email: string, password: string) => request<Account>('/api/auth/login', { method: 'POST', headers: json, body: JSON.stringify({ email, password }) }),
   signup: (values: SignupValues) => request<Account>('/api/auth/signup', { method: 'POST', headers: json, body: JSON.stringify(values) }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  forgot: (email: string) => request<{ message: string }>('/api/auth/forgot', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
+  reset: (token: string, password: string) => request<Account>('/api/auth/reset', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
 };
+
+/** The secret from a `/reset-password#<token>` link (fragments never reach servers or logs), or null. */
+export function resetTokenFromLocation(path: string, hash: string): string | null {
+  return /^\/reset-password\/?$/.test(path) ? /^#([A-Za-z0-9_-]{20,})$/.exec(hash)?.[1] ?? null : null;
+}
