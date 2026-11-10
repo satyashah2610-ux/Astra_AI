@@ -27,3 +27,21 @@ def test_session_tokens_are_long_random_and_stored_only_as_hashes():
     token = next(iter(tokens))
     assert hash_session_token(token) == hash_session_token(token) != token
     assert len(hash_session_token(token)) == 64
+
+
+def test_a_failure_inside_the_password_check_is_not_a_wrong_password(tmp_path, monkeypatch):
+    """Out of memory (or any error) while checking must not answer 401 "wrong password", nor count toward the lock."""
+    from fastapi.testclient import TestClient
+    from app import auth
+    from app.main import create_app
+    from tests import db
+    from tests.staff import PASSWORD, sign_in
+    with TestClient(create_app(tmp_path), raise_server_exceptions=False) as client:
+        sign_in(client, email="ana@riverside.example")
+
+        def broken(*args, **kwargs):
+            raise ValueError("[digital envelope routines] memory limit exceeded")
+        monkeypatch.setattr(auth, "_scrypt", broken)
+        response = client.post("/api/auth/login", json={"email": "ana@riverside.example", "password": PASSWORD})
+        assert response.status_code == 503 and "Try again" in response.json()["detail"]
+        assert db.value("SELECT COUNT(*) FROM login_failures") == 0  # not held against the user

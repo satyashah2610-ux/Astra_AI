@@ -42,6 +42,7 @@ CONFIRM_SENT = "If that account still needs confirming, we’ve sent a new link.
 LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
 NETWORK_LOCKED = "Too many failed attempts from this network. Wait 15 minutes and try again."
 WRONG_PASSWORD = "That password doesn’t match this account."
+CHECK_FAILED = "Couldn’t check the password right now. Try again in a moment."
 PASSWORD_RESET = "Your password has been reset. Log in with your new password."
 RESET_MINUTES = 60
 RESETS_PER_EMAIL_PER_HOUR = 3
@@ -68,16 +69,17 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str | None) -> bool:
-    """Constant-time check; any damaged or foreign hash simply doesn't verify."""
+    """Constant-time check; any damaged or foreign hash simply doesn't verify. A failure while checking (e.g. out of
+    memory) is raised, not reported as a wrong password."""
     try:
         scheme, n, r, p, salt, key = (stored or "").split("$")
         if scheme != "scrypt":
             return False
         decode = lambda value: base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))  # noqa: E731
-        expected = decode(key)
-        return hmac.compare_digest(_scrypt(password, decode(salt), int(n), int(r), int(p)), expected)
+        expected, salt_bytes, n, r, p = decode(key), decode(salt), int(n), int(r), int(p)
     except (ValueError, TypeError):
         return False
+    return hmac.compare_digest(_scrypt(password, salt_bytes, n, r, p), expected)
 
 
 _UNKNOWN_EMAIL_HASH = hash_password(secrets.token_urlsafe(16))  # compared against when the email doesn't exist
@@ -174,7 +176,7 @@ def create_auth(storage: Storage, email_sender=None):
         logger.info("Account created organization=%s user=%s confirmed=%s", organization_id, user_id, not must_confirm)
         return {"message": CHECK_EMAIL if must_confirm else ACCOUNT_CREATED}  # no session: they log in next
 
-    def begin_attempt(db, email: str, ip: str | None) -> None:
+    def begin_attempt(db, email: str, ip: str | None) -> int:
         """Count this password attempt as a failure up front (under a per-email and per-address lock), so attempts
         running in parallel can't all pass the limit before any is recorded. A correct password clears it again."""
         window = (datetime.now(timezone.utc) - timedelta(minutes=FAILURE_MINUTES)).isoformat()
@@ -188,7 +190,19 @@ def create_auth(storage: Storage, email_sender=None):
             db.execute("DELETE FROM login_failures WHERE ip = %s AND at <= %s", (ip, window))
             if db.execute("SELECT COUNT(*) FROM login_failures WHERE ip = %s", (ip,)).fetchone()[0] >= FAILURES_PER_IP:
                 raise HTTPException(429, NETWORK_LOCKED)  # a password reset wouldn't help with this one
-        db.execute("INSERT INTO login_failures (email, ip, at) VALUES (%s, %s, %s)", (email, ip, utc_now()))
+        return db.execute("INSERT INTO login_failures (email, ip, at) VALUES (%s, %s, %s) RETURNING id",
+                          (email, ip, utc_now())).fetchone()[0]
+
+    def check_password(attempt: int, password: str, stored: str) -> bool:
+        """The password check for a recorded attempt. If checking itself fails (e.g. out of memory), the attempt is
+        withdrawn, so it isn't held against the user, and the answer is "try again", never "wrong password"."""
+        try:
+            return verify_password(password, stored)
+        except Exception:
+            logger.exception("Password check failed")
+            with storage.database() as db:
+                db.execute("DELETE FROM login_failures WHERE id = %s", (attempt,))
+            raise HTTPException(503, CHECK_FAILED) from None
 
     def attempt_succeeded(db, email: str) -> None:
         db.execute("DELETE FROM login_failures WHERE email = %s", (email,))  # the right password: earlier typos stop counting
@@ -197,10 +211,10 @@ def create_auth(storage: Storage, email_sender=None):
     def login(body: LoginBody, request: Request, response: Response):
         email, ip = body.email.lower(), request_origin(request)[0]
         with storage.database() as db:
-            begin_attempt(db, email, ip)
+            attempt = begin_attempt(db, email, ip)
             user = db.execute("SELECT id, password_hash, email_confirmed_at FROM users WHERE lower(email) = %s", (email,)).fetchone()
         # scrypt runs with no pooled connection held, so slow guesses can't exhaust the pool.
-        valid = verify_password(body.password, user["password_hash"] if user else _UNKNOWN_EMAIL_HASH)
+        valid = check_password(attempt, body.password, user["password_hash"] if user else _UNKNOWN_EMAIL_HASH)
         if user is None or not valid:  # same work and same answer whether or not the email exists; the failure stays recorded
             raise HTTPException(401, WRONG_LOGIN)
         with storage.database() as db:
@@ -310,8 +324,8 @@ def create_auth(storage: Storage, email_sender=None):
                               (token_hash, utc_now())).fetchone()
             if user is None:
                 raise HTTPException(400, CONFIRM_INVALID)
-            begin_attempt(db, user["email"], ip)  # wrong passwords here count toward the same lock as logins
-        if not verify_password(body.password, user["password_hash"]):
+            attempt = begin_attempt(db, user["email"], ip)  # wrong passwords here count toward the same lock as logins
+        if not check_password(attempt, body.password, user["password_hash"]):
             raise HTTPException(401, WRONG_PASSWORD)
         now = utc_now()
         with storage.database() as db:

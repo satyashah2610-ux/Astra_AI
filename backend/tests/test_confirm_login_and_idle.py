@@ -137,3 +137,11 @@ def test_a_new_login_starts_fresh(staff):
     assert staff.get("/api/auth/me").status_code == 401
     assert staff.post("/api/auth/login", json={"email": "staff@example.com", "password": PASSWORD}).status_code == 200
     assert staff.get("/api/auth/me").status_code == 200
+
+
+def test_logging_in_again_after_confirming_works(client, outbox):
+    """The browser-test helper confirms, then logs in: both must work."""
+    token = signed_up(client, outbox)
+    assert client.post("/api/auth/confirm", json={"token": token, "password": PASSWORD}).status_code == 200
+    login = client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    assert login.status_code == 200, login.text
