@@ -30,7 +30,7 @@ Reset page ── POST /api/auth/reset {token, password} ──► new password,
 | Reset method | Emailed one-time link | Security questions; admin reset | Standard and proves mailbox ownership. |
 | Token location | URL fragment `#token`, posted in the body | `?token=` query | Fragments never reach server, proxy or analytics logs (same as signing links). |
 | Link lifetime | 1 hour, single use | 24 hours | Short window if an inbox is compromised. |
-| Link base URL | `ASTRA_APP_URL` if set, else the request's own (allow-listed) host | The browser's `Origin` header | The host is already checked against `ASTRA_ALLOWED_HOSTS`, so links can't be pointed at another site. |
+| Link base URL | `ASTRA_APP_URL` if set (recommended in production), else the request's host **rebuilt from its parsed name and port** | The raw `Host` header; the browser's `Origin` | The Host header is accepted only as an exact `name[:port]` on the allow-list. A security review showed that taking the raw header let `localhost:x@evil.example` pass as `localhost` and point reset links at another site; parsing strictly and rebuilding the URL closes that. |
 | Rate limits | Stored in PostgreSQL | In-memory counters | Survive restarts and work with more than one server process. |
 | Email transport | Resend's HTTPS API via the standard library | Resend SDK | One small request; no new dependency to vet. |
 | Sending failures | Logged; same answer to the user | Show an error | Keeps "does this email exist?" hidden; the user can try again. |

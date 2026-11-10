@@ -1,6 +1,7 @@
 """Forgot password: emailed one-time links, no account enumeration, limits, and signing out other sessions."""
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -199,3 +200,18 @@ def test_old_request_records_and_finished_links_are_cleaned_up(client, outbox):
     forgot(client)
     assert db.value("SELECT COUNT(*) FROM password_reset_requests") == 1  # only the new request
     assert db.value("SELECT COUNT(*) FROM password_resets") == 1  # the expired link is gone
+
+
+# --- security review: reset links can't be pointed at another site -------------------------------
+
+@pytest.mark.parametrize("host", ["testserver:x@evil.example", "localhost:@evil.example"])
+def test_a_forged_host_header_cannot_redirect_the_reset_link(client, outbox, host):
+    response = client.post("/api/auth/forgot", json={"email": "ana@riverside.example"}, headers={"Host": host})
+    assert response.status_code == 400
+    assert outbox.sent == []
+
+
+def test_the_link_is_built_only_from_the_checked_host_and_port(client, outbox):
+    forgot(client, Host="testserver:8000")
+    parts = urlsplit(re.search(r"https?://\S+", outbox.sent[0].text).group(0))
+    assert (parts.hostname, parts.port, parts.username) == ("testserver", 8000, None)

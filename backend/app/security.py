@@ -12,6 +12,7 @@ malicious website open in the same browser is the main threat:
 
 Every response also gets headers that stop framing (clickjacking), caching, sniffing and referrers.
 """
+import re
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
@@ -33,12 +34,28 @@ def parse_allowed_hosts(value: str | None) -> frozenset[str]:
     return frozenset(host.strip().lower() for host in (value or DEFAULT_ALLOWED_HOSTS).split(",") if host.strip())
 
 
+HOST_HEADER = re.compile(r"(?:\[(?P<ipv6>[0-9a-f:.]+)\]|(?P<name>[a-z0-9.-]+))(?::(?P<port>[0-9]{1,5}))?")
+
+
+UNKNOWN_HOST = "Unknown host name. Open the app at its configured address."
+
+
+def parse_host(host_header: str) -> tuple[str, int | None] | None:
+    """A Host header as (name, port), or None unless it is exactly a host name and an optional numeric port.
+
+    Strict on purpose: values like 'localhost:x@evil.example' must not pass as 'localhost', because the
+    host is used to build links in emails, where everything before '@' would be read as a user name.
+    """
+    match = HOST_HEADER.fullmatch(host_header.strip().lower())
+    if not match or (match["port"] and int(match["port"]) > 65535):
+        return None
+    return (match["ipv6"] or match["name"]), (int(match["port"]) if match["port"] else None)
+
+
 def host_name(host_header: str) -> str:
-    """'127.0.0.1:8000' -> '127.0.0.1', '[::1]:8000' -> '::1'."""
-    host = host_header.strip().lower()
-    if host.startswith("["):
-        return host[1:host.find("]")] if "]" in host else ""
-    return host.rsplit(":", 1)[0] if ":" in host else host
+    """'127.0.0.1:8000' -> '127.0.0.1', '[::1]:8000' -> '::1'; '' for anything that isn't a clean host[:port]."""
+    parsed = parse_host(host_header)
+    return parsed[0] if parsed else ""
 
 
 def is_cross_site(origin: str | None, fetch_site: str | None, host_header: str) -> bool:
@@ -81,7 +98,7 @@ class SecurityMiddleware:
         headers = {name.decode("latin-1").lower(): value.decode("latin-1") for name, value in scope["headers"]}
         host = headers.get("host", "")
         if host_name(host) not in self.allowed_hosts:
-            await reject(400, "Unknown host name. Open the app at its configured address.")
+            await reject(400, UNKNOWN_HOST)
             return
         if scope["method"] not in SAFE_METHODS and is_cross_site(headers.get("origin"), headers.get("sec-fetch-site"), host):
             await reject(403, "Requests from other websites are not allowed.")

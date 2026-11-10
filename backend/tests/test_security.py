@@ -139,3 +139,17 @@ def test_signing_secret_is_in_the_url_fragment_which_browsers_never_send(client)
     assert len(secret) >= 43
     reissued = client.post(f"/api/files/{item['id']}/link").json()["signing_path"]
     assert reissued.startswith("/sign#") and reissued != path
+
+
+# --- security review: Host header with tricks after the port ------------------------------------
+
+@pytest.mark.parametrize("host", ["testserver:x@evil.example", "localhost:@evil.example", "127.0.0.1:x@evil.example",
+                                  "testserver:abc", "testserver:80/x", "testserver:80?x", "testserver:80#x", "testserver:123456",
+                                  "evil.example@testserver", r"testserver\@evil.example", "[::1]@evil.example"])
+def test_host_headers_that_are_not_a_name_and_numeric_port_are_rejected(client, host):
+    assert client.get("/api/health", headers={"Host": host}).status_code == 400
+
+
+@pytest.mark.parametrize("host", ["testserver", "testserver:8000", "127.0.0.1:5173", "LOCALHOST:80"])
+def test_normal_host_headers_still_work(client, host):
+    assert client.get("/api/health", headers={"Host": host}).status_code == 200

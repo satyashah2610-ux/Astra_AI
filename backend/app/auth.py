@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from .database import utc_now
 from .email import EmailError, reset_email
 from .events import request_origin
+from .security import UNKNOWN_HOST, parse_host
 from .models import ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
@@ -165,11 +166,19 @@ def create_auth(storage: Storage, email_sender=None):
         return public_account(account)
 
     def app_url(request: Request) -> str:
-        """Where links in emails point: ASTRA_APP_URL, or this request's host (already checked against the allow-list).
+        """Where links in emails point: ASTRA_APP_URL, or this request's host rebuilt from its checked parts.
+        Never the raw Host header: anything but a clean host[:port] is refused, so a link can't be pointed elsewhere.
         Behind a TLS-terminating proxy (ASTRA_SECURE_COOKIES=1) the request arrives as http, but the link must be https."""
         configured = os.environ.get("ASTRA_APP_URL", "").strip().rstrip("/")
+        if configured:
+            return configured
+        parsed = parse_host(request.headers.get("host", ""))
+        if parsed is None:  # the middleware already refuses these; never build a link from one
+            raise HTTPException(400, UNKNOWN_HOST)
+        name, port = parsed
+        host = f"[{name}]" if ":" in name else name
         scheme = "https" if secure_cookies(request) else request.url.scheme
-        return configured or f"{scheme}://{request.headers.get('host', '')}"
+        return f"{scheme}://{host}{'' if port is None else f':{port}'}"
 
     def deliver(email) -> None:
         """Runs after the response is sent, so a known email isn't slower to answer than an unknown one."""
@@ -184,6 +193,7 @@ def create_auth(storage: Storage, email_sender=None):
     @router.post("/forgot", status_code=202)
     def forgot(body: ForgotBody, request: Request, background: BackgroundTasks):
         email, ip, now = body.email.lower(), request_origin(request)[0], utc_now()
+        base_url = app_url(request)  # before any lookup: a bad host fails the same way for every email
         hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         with storage.database() as db:
             db.execute("DELETE FROM password_reset_requests WHERE at <= %s", (hour_ago,))  # only the last hour is ever counted
@@ -198,7 +208,7 @@ def create_auth(storage: Storage, email_sender=None):
                            (user["id"], now))  # dead links are never needed again
                 db.execute("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (%s, %s, %s, %s)",
                            (hash_session_token(token), user["id"], now, expires))
-                background.add_task(deliver, reset_email(user["email"], user["name"], f"{app_url(request)}/reset-password#{token}"))
+                background.add_task(deliver, reset_email(user["email"], user["name"], f"{base_url}/reset-password#{token}"))
                 logger.info("Password reset link issued user=%s", user["id"])
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
