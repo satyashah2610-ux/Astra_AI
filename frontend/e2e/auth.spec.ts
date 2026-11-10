@@ -10,10 +10,10 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await page.getByLabel('Company name').fill('Riverside Builders');
   await page.getByLabel('Your name').fill('Ana Lopez');
   await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password').fill('short');
+  await page.getByLabel('Password', { exact: true }).fill('short');
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByText('Use at least 10 characters.')).toBeVisible();
-  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByText('Riverside Builders')).toBeVisible();
   await expect(page.getByLabel('Signed in as Ana Lopez')).toHaveText('AL');
@@ -24,10 +24,10 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await page.getByRole('button', { name: 'Log out' }).click();
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password').fill('not the password');
+  await page.getByLabel('Password', { exact: true }).fill('not the password');
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
-  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByText('Riverside Builders')).toBeVisible();
 });
