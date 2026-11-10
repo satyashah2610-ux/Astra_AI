@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { PASSWORD, signUp } from './helpers';
+import { confirmationLink, emailsTo, PASSWORD, signUp } from './helpers';
 
 test('create a company account, log out, log back in', async ({ page }) => {
   const email = `owner-${Date.now()}@example.com`;
@@ -15,13 +15,22 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await expect(page.getByText('Use at least 10 characters.')).toBeVisible();
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Create account' }).click();
-  // Not straight into the workspace: a confirmation, then the login form with the email filled in.
-  await expect(page.getByRole('status')).toHaveText('Account created. Log in to continue.');
+  // Not straight into the workspace: confirm the email first, then log in.
+  await expect(page.getByRole('status')).toHaveText('Account created. Check your email for a link to confirm your address, then log in.');
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await expect(page.getByLabel('Work email')).toHaveValue(email);
   const emailBox = (await page.getByLabel('Work email').boundingBox())!;
   const passwordBox = (await page.getByLabel('Password', { exact: true }).boundingBox())!;
   expect(Math.abs(emailBox.width - passwordBox.width)).toBeLessThan(1);  // both boxes span the form
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('alert')).toContainText('Confirm your email address first');  // not yet confirmed
+  await expect(page.getByRole('button', { name: 'Send a new confirmation link' })).toBeVisible();
+
+  await page.goto(await confirmationLink(email));  // the link from the email
+  await expect(page.getByRole('heading', { name: 'Email confirmed' })).toBeVisible();
+  await page.getByRole('link', { name: 'Go to log in' }).click();
+  await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByText('Riverside Builders')).toBeVisible();
@@ -78,10 +87,9 @@ test('a signer opens their link without any login', async ({ page, browser }) =>
 });
 
 test('forgot password: request a link, open it from the email, choose a new password', async ({ page }) => {
-  const { readdirSync, readFileSync } = await import('node:fs');
-  const { join } = await import('node:path');
   const email = `forgot-${Date.now()}@example.com`;
-  await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });  // not logged in
+  // Signed up but never confirmed: the reset link proves the address too, so login works after the reset.
+  await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });
 
   await page.goto('/');
   await page.getByRole('button', { name: 'Forgot password?' }).click();
@@ -89,14 +97,10 @@ test('forgot password: request a link, open it from the email, choose a new pass
   await page.getByRole('button', { name: 'Send reset link' }).click();
   await expect(page.getByRole('status')).toContainText('If an account exists for that email');
 
-  // Read the emailed link from the test outbox.
-  const outbox = process.env.ASTRA_E2E_OUTBOX!;
-  // Other tests' emails (e.g. signing links) share the outbox: wait for one to this account.
-  const toMe = () => readdirSync(outbox).filter(name => name.endsWith('.json')).sort()
-    .map(name => JSON.parse(readFileSync(join(outbox, name), 'utf-8'))).filter(message => message.to === email);
-  await expect.poll(() => toMe().length, { timeout: 10000 }).toBeGreaterThan(0);
-  const mine = toMe().at(-1);
-  expect(mine.subject).toBe('Reset your Astra Sign password');
+  // Read the emailed link from the test outbox (this address also got a sign-up confirmation: wait for the reset one).
+  const resets = () => emailsTo(email).filter(message => message.subject === 'Reset your Astra Sign password');
+  await expect.poll(() => resets().length, { timeout: 10000 }).toBeGreaterThan(0);
+  const mine = resets().at(-1)!;
   const link = /\/reset-password#[A-Za-z0-9_-]{43,}/.exec(mine.text)![0];
 
   await page.goto(link);
@@ -150,5 +154,20 @@ test('the account menu is reachable on a narrow screen', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /signed in as Pat Tester/i }).click();
   await expect(page.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
+});
+
+test('five wrong passwords lock the login for that email', async ({ page }) => {
+  const { email } = await signUp(page, 'Lock Co');
+  await page.request.post('/api/auth/logout');
+  await page.goto('/');
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.getByLabel('Work email').fill(email);
+    await page.getByLabel('Password', { exact: true }).fill('not the password');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
+  }
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);  // even the right password now waits
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Too many failed attempts. Wait 15 minutes, or reset your password.');
 });
 

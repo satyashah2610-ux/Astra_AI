@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Eye, EyeOff, Loader2, LogIn, Mail, Sparkles, UserPlus } from 'lucide-react';
+import { ApiError } from './api';
 import { authApi, type Account } from './auth';
 
 type Mode = 'login' | 'signup' | 'forgot';
@@ -32,15 +33,23 @@ export default function LoginPage({ onSignedIn, notice = '' }: { onSignedIn: (ac
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);  // right password, email not confirmed yet: offer a new link
   const [showPassword, setShowPassword] = useState(false);
 
   const set = (key: keyof Values, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
-  function switchTo(next: Mode) { setMode(next); setErrors({}); setError(''); setSent(''); setCreated(''); setShowPassword(false); }
+  function switchTo(next: Mode) { setMode(next); setErrors({}); setError(''); setSent(''); setCreated(''); setShowPassword(false); setUnconfirmed(false); }
+
+  async function resend() {
+    setBusy(true);
+    try { const { message } = await authApi.resendConfirmation(values.email.trim()); setError(''); setUnconfirmed(false); setCreated(message); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Something went wrong. Try again.'); }
+    finally { setBusy(false); }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const found = check(values, mode);
-    setErrors(found); setError(''); setCreated('');
+    setErrors(found); setError(''); setCreated(''); setUnconfirmed(false);
     if (Object.keys(found).length) return;
     setBusy(true);
     try {
@@ -53,6 +62,7 @@ export default function LoginPage({ onSignedIn, notice = '' }: { onSignedIn: (ac
       setCreated(message);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
+      setUnconfirmed(mode === 'login' && e instanceof ApiError && e.status === 403);
       if (mode === 'login') set('password', '');
     } finally { setBusy(false); }
   }
@@ -95,7 +105,8 @@ export default function LoginPage({ onSignedIn, notice = '' }: { onSignedIn: (ac
       {field('password', 'Password', 'password', mode === 'login' ? 'current-password' : 'new-password')}
       {mode === 'login' && <button type="button" className="text-button forgot-link" onClick={() => switchTo('forgot')}>Forgot password?</button>}
       {mode === 'signup' && !errors.password && <small className="field-hint">At least 10 characters. A short phrase is easiest to remember.</small>}
-      {error && <div className="error-banner" role="alert">{error}</div>}
+      {error && <div className="error-banner" role="alert"><span>{error}</span>
+        {unconfirmed && <button type="button" className="text-button" disabled={busy} onClick={() => void resend()}>Send a new confirmation link</button>}</div>}
       <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={16} /> : mode === 'login' ? <LogIn size={16} /> : <UserPlus size={16} />}{mode === 'login' ? 'Log in' : 'Create account'}</button>
       <p className="auth-switch">{mode === 'login'
         ? <>New to Astra Sign? <button type="button" className="text-button" onClick={() => switchTo('signup')}>Create an account</button></>

@@ -13,10 +13,17 @@ export const authApi = {
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   deleteAccount: (confirm: string) => request<void>('/api/auth/account', { method: 'DELETE', headers: json, body: JSON.stringify({ confirm }) }),
   forgot: (email: string) => request<{ message: string }>('/api/auth/forgot', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
+  confirm: (token: string) => request<{ message: string }>('/api/auth/confirm', { method: 'POST', headers: json, body: JSON.stringify({ token }) }),
+  resendConfirmation: (email: string) => request<{ message: string }>('/api/auth/resend-confirmation', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
   reset: (token: string, password: string) => request<{ message: string }>('/api/auth/reset', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
 };
 
 /** The secret from a `/reset-password#<token>` link (fragments never reach servers or logs), or null. */
 export function resetTokenFromLocation(path: string, hash: string): string | null {
   return /^\/reset-password\/?$/.test(path) ? /^#([A-Za-z0-9_-]{20,})$/.exec(hash)?.[1] ?? null : null;
+}
+
+/** The secret from a `/confirm-email#<token>` link, or null. */
+export function confirmTokenFromLocation(path: string, hash: string): string | null {
+  return /^\/confirm-email\/?$/.test(path) ? /^#([A-Za-z0-9_-]{20,})$/.exec(hash)?.[1] ?? null : null;
 }

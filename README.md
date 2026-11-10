@@ -41,7 +41,7 @@ On macOS/Linux use `.venv/bin/python` and `npm` instead. Node.js 24 and Python 3
 
 ## Try the feature
 
-1. On the login page click **Create an account**: your company name, your name, work email and a password of at least 10 characters. You'll see **Account created**; then log in. (Signers never need an account.)
+1. On the login page click **Create an account**: your company name, your name, work email and a password of at least 10 characters. You'll get an email with a link to confirm your address (valid 24 hours; without email configured, accounts are confirmed at once); then log in. (Signers never need an account.)
 1. Click **Try a sample agreement**, or upload `examples/sample-agreement.pdf` (or your own PDF).
 2. For the sample, use **Next page** to reach the signature area on page 2.
 3. Click and drag on an empty part of the PDF to draw a signature box. Alternatively, click **Add signature box** in the toolbar for a default-sized box. Drawing and moving work together without switching tools.
@@ -121,7 +121,8 @@ The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides 
 - **Forgot password:** "Forgot password?" on the login page emails a one-time link (valid 1 hour) to choose a new password; saving it signs out every session and shows **Password reset** with a link to log in. The answer never reveals whether an email has an account, and requests are limited (3 per account, 10 per network address, per hour). See [docs/design/09-forgot-password.md](docs/design/09-forgot-password.md).
 - **Email:** sent through [Resend](https://resend.com) when `RESEND_API_KEY` and `ASTRA_EMAIL_FROM` are set (put them in the git-ignored `.env`, e.g. `ASTRA_EMAIL_FROM="Astra Sign <sign@mail.yourdomain.com>"` with that domain verified in Resend). `ASTRA_EMAIL_OUTBOX=<folder>` writes emails to files instead (used by the browser tests; nothing is sent). `ASTRA_APP_URL` sets the address used in email links; **set it in production** (e.g. `https://app.signwithastra.com`). Without it, links use the request's own host name and port, accepted only as an exact allow-listed `name[:port]`. Without configuration, nothing is sent.
 - **Signing emails:** see [docs/design/10-signing-email.md](docs/design/10-signing-email.md). Without email configured, or past the limit of 50 signing emails per company per day, sending still works and the screen asks you to copy the link.
-- Not built yet: an email to staff when the client signs, inviting colleagues, login rate limiting, and hosting.
+- **Login protection:** 5 wrong passwords for one email (or 20 from one network address) within 15 minutes lock logins for that email or address until the 15 minutes pass; a password reset unlocks. New accounts must confirm their email before logging in. See [docs/design/12-login-protection.md](docs/design/12-login-protection.md).
+- Not built yet: an email to staff when the client signs, inviting colleagues, and hosting.
 - This first version is a local single-workspace app. Authentication and company data isolation must be added before hosting it for multiple companies.
 - PDFs must be unencrypted, no larger than 20 MiB, and contain 1–100 pages. PDF pages are rendered as a canvas; selectable PDF text and screen-reader transcription of document contents are not included yet.
 

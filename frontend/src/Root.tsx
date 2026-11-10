@@ -1,6 +1,7 @@
+import ConfirmEmailPage from './ConfirmEmailPage';
 import ResetPasswordPage from './ResetPasswordPage';
 import StaffGate from './StaffGate';
-import { resetTokenFromLocation } from './auth';
+import { confirmTokenFromLocation, resetTokenFromLocation } from './auth';
 import SigningPage from './SigningPage';
 import { tokenFromLocation } from './signing';
 
@@ -10,5 +11,7 @@ export default function Root({ path, hash }: { path: string; hash: string }) {
   if (token) return <SigningPage token={token} />;
   const reset = resetTokenFromLocation(path, hash);
   if (reset) return <ResetPasswordPage token={reset} />;
+  const confirm = confirmTokenFromLocation(path, hash);
+  if (confirm) return <ConfirmEmailPage token={confirm} />;
   return <StaffGate />;
 }
