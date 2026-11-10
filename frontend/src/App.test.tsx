@@ -48,6 +48,7 @@ it('shows exactly the two requested navigation tabs and a useful empty state', a
   expect(screen.getAllByRole('tab')).toHaveLength(2);
   expect(await screen.findByText('Your first agreement starts here')).toBeInTheDocument();
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Agreements', 'Files']);
+  expect(screen.getByRole('link', { name: 'Astra Sign' })).toHaveTextContent(/^Astra Sign$/);  // the logo only, no section label beside it
   await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
   expect(await screen.findByText('No files yet')).toBeInTheDocument();
 });

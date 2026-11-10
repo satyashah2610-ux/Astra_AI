@@ -100,7 +100,7 @@ export default function App({ account, onLogout }: { account: Account; onLogout:
 
   return <div className="app">
     <header className="topbar">
-      <a className="brand" href="/" onClick={e => { e.preventDefault(); guard(() => { setMarks(active?.marks || []); setTab('agreements'); }); }}><span className="brand-icon"><Sparkles size={22} strokeWidth={1.6} /></span>Astra Sign<span className="brand-divider" /> <span className="brand-product">Agreements</span></a>
+      <a className="brand" href="/" onClick={e => { e.preventDefault(); guard(() => { setMarks(active?.marks || []); setTab('agreements'); }); }}><span className="brand-icon"><Sparkles size={22} strokeWidth={1.6} /></span>Astra Sign</a>
       <nav role="tablist" aria-label="Main navigation">
         <button role="tab" aria-selected={tab === 'agreements'} disabled={busy} onClick={() => tab !== 'agreements' && guard(() => { setMarks(active?.marks || []); setTab('agreements'); })}><FileText size={16} />Agreements</button>
         <button role="tab" aria-selected={tab === 'files'} disabled={busy} onClick={() => tab !== 'files' && guard(() => { setMarks(active?.marks || []); setTab('files'); })}><FileSignature size={16} />Files</button>
