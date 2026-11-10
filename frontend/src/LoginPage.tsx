@@ -18,7 +18,7 @@ function check(values: Values, mode: Mode): Errors {
 }
 
 /** Staff log in or create their company's account. Signers never see this page. */
-export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Account) => void }) {
+export default function LoginPage({ onSignedIn, notice = '' }: { onSignedIn: (account: Account) => void; notice?: string }) {
   // A '/?forgot' link (from an expired reset email) opens straight on the reset request.
   // The flag is dropped from the address bar once read, so a later log-out doesn't land here again.
   const [mode, setMode] = useState<Mode>(() => {
@@ -27,7 +27,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Accoun
     return 'forgot';
   });
   const [sent, setSent] = useState('');
-  const [created, setCreated] = useState('');  // "Account created": shown above the login form
+  const [created, setCreated] = useState(notice);  // "Account created" (or a notice such as "account deleted"): shown above the login form
   const [values, setValues] = useState<Values>({ company: '', name: '', email: '', password: '' });
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState('');

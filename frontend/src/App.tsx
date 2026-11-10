@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, LogOut, CheckCircle2, FileSignature, FileText, FolderOpen, Loader2, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCircle2, FileSignature, FileText, FolderOpen, Loader2, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { request, type Agreement, type Mark } from './api';
 import PdfEditor from './PdfEditor';
 import FilesPage from './FilesPage';
-import { initialsFrom, isSignatureMark } from './items';
+import AccountMenu from './AccountMenu';
+import { isSignatureMark } from './items';
 import type { Account } from './auth';
 
-export default function App({ account, onLogout }: { account: Account; onLogout: () => void }) {
+export default function App({ account, onLogout, onAccountDeleted }: { account: Account; onLogout: () => void; onAccountDeleted: () => void }) {
   const [tab, setTab] = useState<'agreements' | 'files'>('agreements');
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [active, setActive] = useState<Agreement | null>(null);
@@ -105,7 +106,7 @@ export default function App({ account, onLogout }: { account: Account; onLogout:
         <button role="tab" aria-selected={tab === 'agreements'} disabled={busy} onClick={() => tab !== 'agreements' && guard(() => { setMarks(active?.marks || []); setTab('agreements'); })}><FileText size={16} />Agreements</button>
         <button role="tab" aria-selected={tab === 'files'} disabled={busy} onClick={() => tab !== 'files' && guard(() => { setMarks(active?.marks || []); setTab('files'); })}><FileSignature size={16} />Files</button>
       </nav>
-      <div className="workspace-label"><span className="account-text"><strong>{account.organization.name}</strong><span>{account.user.name}</span></span><span className="avatar" aria-label={`Signed in as ${account.user.name}`}>{initialsFrom(account.user.name).slice(0, 2)}</span><button className="icon-button logout" aria-label="Log out" title="Log out" onClick={() => guard(onLogout)}><LogOut size={16} /></button></div>
+      <div className="workspace-label"><span className="account-text"><strong>{account.organization.name}</strong><span>{account.user.name}</span></span><AccountMenu account={account} onLogout={() => guard(onLogout)} onDeleted={onAccountDeleted} /></div>
     </header>
     <main>
       <div className="page-heading"><div><div className="eyebrow">YOUR WORK, READY TO SIGN</div><h1>{tab === 'agreements' ? 'Good agreements. Great beginnings.' : 'Every file, signed before work starts.'}</h1><p>{tab === 'agreements' ? 'Prepare your agreements once. Make every new beginning a little easier.' : 'Create a file for each job, send the signing link, and keep the signed copy.'}</p></div>{tab === 'agreements' && <button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}>{busy ? <Loader2 className="spin" size={17} /> : <Plus size={18} />}Upload agreement</button>}</div>

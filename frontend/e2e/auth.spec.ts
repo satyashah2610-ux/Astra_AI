@@ -25,12 +25,13 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Log in' }).click();
   await expect(page.getByText('Riverside Builders')).toBeVisible();
-  await expect(page.getByLabel('Signed in as Ana Lopez')).toHaveText('AL');
+  await expect(page.getByRole('button', { name: /signed in as Ana Lopez/i })).toHaveText('AL');
 
   await page.reload();  // the session survives a reload
   await expect(page.getByText('Riverside Builders')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Log out' }).click();
+  await page.getByRole('button', { name: /signed in as Ana Lopez/i }).click();  // the initials open the account menu
+  await page.getByRole('menuitem', { name: 'Log out' }).click();
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill('not the password');
@@ -118,3 +119,36 @@ test('forgot password: request a link, open it from the email, choose a new pass
   await page.getByRole('button', { name: 'Save new password' }).click();
   await expect(page.getByRole('alert')).toContainText('invalid or has expired');
 });
+
+test('delete the account from the account menu, after typing the confirmation', async ({ page }) => {
+  const { email } = await signUp(page, 'Delete Me Co');
+  const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
+  const agreement = await (await page.request.post('/api/agreements', { multipart: { file: { name: 'Doomed.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
+  await page.goto('/');
+  await expect(page.getByText('Delete Me Co')).toBeVisible();
+  await page.getByRole('button', { name: /signed in as Pat Tester/i }).click();
+  await page.getByRole('menuitem', { name: 'Delete account' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Delete Me Co');
+  const confirm = dialog.getByRole('button', { name: 'Delete account permanently' });
+  await expect(confirm).toBeDisabled();
+  await dialog.getByLabel('Type “I want to delete account” to confirm').fill('I want to delete account');
+  await page.screenshot({ path: 'test-results/delete-account.png', fullPage: true });
+  await confirm.click();
+  await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('Your account has been deleted.');
+  await page.getByLabel('Work email').fill(email);
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
+  expect((await page.request.get(`/api/agreements/${agreement.id}`)).status()).toBe(401);
+});
+
+test('the account menu is reachable on a narrow screen', async ({ page }) => {
+  await signUp(page);
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto('/');
+  await page.getByRole('button', { name: /signed in as Pat Tester/i }).click();
+  await expect(page.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
+});
+

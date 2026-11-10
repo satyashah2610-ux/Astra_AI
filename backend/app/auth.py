@@ -13,11 +13,12 @@ from uuid import uuid4
 import psycopg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 
-from .database import utc_now
+from .database import utc_now, write_lock
 from .email import EmailError, reset_email
 from .events import request_origin
 from .links import app_url, secure_cookies
-from .models import ForgotBody, LoginBody, ResetBody, SignupBody
+from .signed_documents import remove_signed_pdf
+from .models import DeleteAccountBody, ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
 logger = logging.getLogger("astrasign.auth")
@@ -153,6 +154,38 @@ def create_auth(storage: Storage, email_sender=None):
         if token:
             with storage.database() as db:
                 db.execute("DELETE FROM sessions WHERE token_hash = %s", (hash_session_token(token),))
+        response = Response(status_code=204)
+        response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
+        return response
+
+    @router.delete("/account", status_code=204)
+    def delete_account(body: DeleteAccountBody, account: dict = Depends(current_user)):
+        """Deletes the whole company (one login per company): every row it owns, then its stored PDFs and images."""
+        organization_id = account["organization_id"]
+        with storage.database() as db:
+            write_lock(db)  # no file can be created or signed for this company halfway through
+            agreement_ids = [row["id"] for row in db.execute("SELECT id FROM agreements WHERE organization_id = %s", (organization_id,))]
+            file_ids = [row["id"] for row in db.execute("SELECT id FROM files WHERE organization_id = %s", (organization_id,))]
+            for table in ("signer_items", "signatures", "file_events"):  # no foreign keys on these
+                db.execute(f"DELETE FROM {table} WHERE file_id = ANY(%s)", (file_ids,))
+            db.execute("DELETE FROM password_reset_requests WHERE email = %s", (account["email"].lower(),))  # no foreign key
+            # Cascades to users, sessions, reset links, agreements, files and signing-email counts.
+            db.execute("DELETE FROM organizations WHERE id = %s", (organization_id,))
+        stored = [storage.template_pdf(identifier) for identifier in agreement_ids]
+        for identifier in file_ids:
+            stored += [storage.document_pdf(identifier), storage.signature_png(identifier), storage.initials_png(identifier)]
+        # After commit: the data is already unreachable, so a file that can't be removed is logged, not undone.
+        for path in stored:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove a stored file of a deleted account: %s", path.name)
+        for identifier in file_ids:
+            try:
+                remove_signed_pdf(storage, identifier)  # waits for a signed-PDF build in progress, then removes it
+            except OSError:
+                logger.warning("Could not remove the signed PDF of a deleted account's file %s", identifier)
+        logger.info("Account deleted organization=%s files=%s agreements=%s", organization_id, len(file_ids), len(agreement_ids))
         response = Response(status_code=204)
         response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
         return response
