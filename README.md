@@ -107,7 +107,7 @@ cd frontend
 npm.cmd run build
 ```
 
-The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides that proxy target. A future production deployment must serve the built frontend and proxy `/api` to the Python service, with durable storage; uploading the frontend alone is insufficient.
+The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides that proxy target. The browser tests run against the built app with `vite preview`, which reuses the same `server.proxy` setting, so keep `/api` proxying in `server.proxy`. A future production deployment must serve the built frontend and proxy `/api` to the Python service, with durable storage; uploading the frontend alone is insufficient.
 
 ## Current scope
 
