@@ -1,0 +1,17 @@
+# Never send secrets, local data or build output into the image.
+.env
+.env.*
+**/.env*
+.git
+.venv
+**/node_modules
+**/__pycache__
+backend/data
+backend/tests
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+frontend/public/pdf-assets
+tmp
+docs
+frontend/tsconfig.tsbuildinfo

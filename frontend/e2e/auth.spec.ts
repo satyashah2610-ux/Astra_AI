@@ -27,15 +27,22 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('Confirm your email address first');  // not yet confirmed
   await expect(page.getByRole('button', { name: 'Send a new confirmation link' })).toBeVisible();
 
-  await page.goto(await confirmationLink(email));  // the link from the email, which asks for the password too
+  const link = await confirmationLink(email);
+  await page.goto(link);  // the link from the email asks for the password once, then logs straight in
   await expect(page.getByRole('heading', { name: 'Confirm your email' })).toBeVisible();
   await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
   await page.getByRole('button', { name: 'Confirm email' }).click();
-  await expect(page.getByRole('heading', { name: 'Email confirmed' })).toBeVisible();
-  await page.getByRole('link', { name: 'Go to log in' }).click();
-  await page.getByLabel('Work email').fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByText('Riverside Builders')).toBeVisible();
+  expect(new URL(page.url()).pathname + new URL(page.url()).hash).toBe('/');  // the used link left the address bar
+
+  // Later, logged out, the same link only leads to the login page.
+  const session = await page.context().cookies();
+  await page.context().clearCookies();
+  await page.goto(link);
+  await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
+  await expect(page.getByText('This confirmation link has already been used or has expired. Log in to continue.')).toBeVisible();
+  await page.context().addCookies(session);
+  await page.goto('/');
   await expect(page.getByText('Riverside Builders')).toBeVisible();
   await expect(page.getByRole('button', { name: /signed in as Ana Lopez/i })).toHaveText('AL');
 

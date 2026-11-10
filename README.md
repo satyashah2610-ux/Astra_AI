@@ -135,3 +135,15 @@ See [Decisions.md](Decisions.md) for design choices, the TDD record, and verific
 - [FastAPI file upload documentation](https://fastapi.tiangolo.com/tutorial/request-files/)
 - [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testing/)
 - [PDF.js API](https://mozilla.github.io/pdf.js/api/)
+
+## Hosting (Render)
+
+One Docker container serves the API and the built pages; files live on a persistent disk. Full design: [docs/design/15-hosting.md](docs/design/15-hosting.md).
+
+- **New → Web Service**, repo `Astra_AI`, branch `main`, language **Docker** (uses the `Dockerfile`), instance **Starter**.
+- **Advanced → Add disk:** mount path `/var/data`, 1 GB.
+- **Environment variables:** `DATABASE_URL`, `RESEND_API_KEY`, `ASTRA_EMAIL_FROM` (secrets: entered only in Render's dashboard), plus
+  `ASTRA_DATA_DIR=/var/data`, `ASTRA_APP_URL=https://app.signwithastra.com`, `ASTRA_ALLOWED_HOSTS=<service>.onrender.com,app.signwithastra.com`,
+  `ASTRA_SECURE_COOKIES=1`, `ASTRA_TRUSTED_PROXIES=1`.
+- **Health check path:** leave it empty. Render's checks use an internal host name, which the host allow-list refuses.
+- **Custom domain:** add `app.signwithastra.com` in Render, then the CNAME it shows in Cloudflare DNS, **DNS only** (grey cloud).

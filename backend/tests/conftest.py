@@ -82,7 +82,7 @@ def database(test_schema, monkeypatch, tmp_path_factory):
     # FastAPI's TestClient sends Host: testserver; allow it alongside the real defaults.
     monkeypatch.setenv("ASTRA_ALLOWED_HOSTS", "testserver,127.0.0.1,localhost")
     # Tests never send real email: no Resend key, no outbox, no app address unless a test sets them.
-    for name in ("RESEND_API_KEY", "ASTRA_EMAIL_FROM", "ASTRA_EMAIL_OUTBOX", "ASTRA_APP_URL", "ASTRA_TRUSTED_PROXIES", "ASTRA_REMINDER_MINUTES"):
+    for name in ("RESEND_API_KEY", "ASTRA_EMAIL_FROM", "ASTRA_EMAIL_OUTBOX", "ASTRA_APP_URL", "ASTRA_TRUSTED_PROXIES", "ASTRA_REMINDER_MINUTES", "ASTRA_FRONTEND_DIR"):
         monkeypatch.delenv(name, raising=False)
     yield test_schema
 

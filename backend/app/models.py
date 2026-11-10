@@ -191,6 +191,11 @@ class ForgotBody(BaseModel):
     email: Email
 
 
+class ConfirmCheckBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: Annotated[str, StringConstraints(min_length=20, max_length=200), AfterValidator(no_nul)]
+
+
 class ConfirmBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: Annotated[str, StringConstraints(min_length=20, max_length=200), AfterValidator(no_nul)]
