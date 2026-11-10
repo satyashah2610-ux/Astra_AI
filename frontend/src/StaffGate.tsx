@@ -4,14 +4,16 @@ import App from './App';
 import LoginPage from './LoginPage';
 import { ApiError, LOGGED_OUT_EVENT } from './api';
 import { authApi, type Account } from './auth';
+import { IDLE_NOTICE, useIdleLogout } from './idle';
 
 type State = Account | 'checking' | 'logged-out' | 'unreachable';
 
 /** The staff workspace, shown only to a logged-in user; everyone else gets the login page. */
-export default function StaffGate() {
+export default function StaffGate({ notice: initialNotice = '' }: { notice?: string }) {
   const [state, setState] = useState<State>('checking');
-  const [notice, setNotice] = useState('');  // shown on the login page, e.g. after deleting the account
+  const [notice, setNotice] = useState(initialNotice);  // shown on the login page, e.g. after deleting the account
   const loggedOut = useCallback(() => setState('logged-out'), []);
+  const sessionEnded = useCallback(() => { setNotice('Your session has ended. Log in again to continue.'); setState('logged-out'); }, []);
 
   const check = useCallback(() => {
     setState('checking');
@@ -23,9 +25,9 @@ export default function StaffGate() {
 
   useEffect(() => {
     check();
-    window.addEventListener(LOGGED_OUT_EVENT, loggedOut);  // a session that ends mid-use returns here
-    return () => window.removeEventListener(LOGGED_OUT_EVENT, loggedOut);
-  }, [check, loggedOut]);
+    window.addEventListener(LOGGED_OUT_EVENT, sessionEnded);  // a session the server ended mid-use returns here
+    return () => window.removeEventListener(LOGGED_OUT_EVENT, sessionEnded);
+  }, [check, sessionEnded]);
 
   if (state === 'checking') return <div className="auth-shell"><p className="loading"><Loader2 className="spin" size={18} />Loading…</p></div>;
   if (state === 'unreachable') return <div className="auth-shell"><div className="auth-card outage" role="alert">
@@ -35,6 +37,16 @@ export default function StaffGate() {
     <button className="primary auth-submit" onClick={check}><RotateCcw size={16} />Retry</button>
   </div></div>;
   if (state === 'logged-out') return <LoginPage notice={notice} onSignedIn={account => { setNotice(''); setState(account); }} />;
-  return <App account={state} onLogout={() => { void authApi.logout().catch(() => undefined).finally(loggedOut); }}
+  return <SignedIn account={state} onLogout={notice => { setNotice(notice ?? ''); void authApi.logout().catch(() => undefined).finally(loggedOut); }}
     onAccountDeleted={() => { setNotice('Your account has been deleted.'); loggedOut(); }} />;
+}
+
+/** The workspace, logged out after 10 minutes without activity (the server ends the session then, too). */
+function SignedIn({ account, onLogout, onAccountDeleted }: { account: Account; onLogout: (notice?: string) => void; onAccountDeleted: () => void }) {
+  const onIdle = useCallback(() => onLogout(IDLE_NOTICE), [onLogout]);
+  const keepAlive = useCallback(() => authApi.me().catch(error => {
+    if (error instanceof ApiError && error.status === 401) onIdle();  // the server already ended it
+  }), [onIdle]);
+  useIdleLogout(onIdle, keepAlive);
+  return <App account={account} onLogout={() => onLogout()} onAccountDeleted={onAccountDeleted} />;
 }

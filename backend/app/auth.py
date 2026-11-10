@@ -18,13 +18,16 @@ from .email import EmailError, confirmation_email, reset_email
 from .events import request_origin
 from .links import app_url, secure_cookies
 from .signed_documents import remove_signed_pdf
-from .models import ConfirmBody, DeleteAccountBody, ForgotBody, LoginBody, ResetBody, SignupBody
+from .models import ConfirmBody, ConfirmCheckBody, DeleteAccountBody, ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
 logger = logging.getLogger("astrasign.auth")
 
 SESSION_COOKIE = "astra_session"
 SESSION_DAYS = 14
+IDLE_MINUTES = 12  # the browser logs out after 10 idle minutes; the server ends sessions it didn't close (activity is
+                   # reported about once a minute and saved every 30 s, so 2 more minutes never cut an active user)
+TOUCH_SECONDS = 30  # how often activity is written, at most
 SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}  # memory-hard: about 16 MB and tens of milliseconds per guess
 NOT_LOGGED_IN = "Log in to continue."
 WRONG_LOGIN = "Email or password is incorrect."
@@ -33,7 +36,7 @@ RESET_INVALID = "This reset link is invalid or has expired. Request a new one."
 ACCOUNT_CREATED = "Account created. Log in to continue."
 CHECK_EMAIL = "Account created. Check your email for a link to confirm your address, then log in."
 NOT_CONFIRMED = "Confirm your email address first: use the link we sent you, or send a new one."
-EMAIL_CONFIRMED = "Email confirmed. Log in to continue."
+EMAIL_CONFIRMED = "Email confirmed."
 CONFIRM_INVALID = "This confirmation link is invalid or has expired. Log in to send a new one."
 CONFIRM_SENT = "If that account still needs confirming, we’ve sent a new link."
 LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
@@ -113,9 +116,11 @@ def create_auth(storage: Storage, email_sender=None):
 
     def start_session(db, request: Request, response: Response, user_id: str) -> None:
         token, now = new_session_token(), utc_now()
-        db.execute("DELETE FROM sessions WHERE user_id = %s AND expires_at <= %s", (user_id, now))  # tidy this user's expired sessions
-        db.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (%s, %s, %s, %s)",
-                   (hash_session_token(token), user_id, now, in_days(SESSION_DAYS)))
+        idle_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=IDLE_MINUTES)).isoformat()
+        db.execute("DELETE FROM sessions WHERE user_id = %s AND (expires_at <= %s OR last_seen_at <= %s)",
+                   (user_id, now, idle_cutoff))  # tidy this user's expired and abandoned sessions
+        db.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen_at) VALUES (%s, %s, %s, %s, %s)",
+                   (hash_session_token(token), user_id, now, in_days(SESSION_DAYS), now))
         set_session_cookie(request, response, token)
 
     def current_user(request: Request, response: Response) -> dict:
@@ -124,14 +129,23 @@ def create_auth(storage: Storage, email_sender=None):
             raise HTTPException(401, NOT_LOGGED_IN)
         token_hash = hash_session_token(token)
         with storage.database() as db:
-            row = db.execute("""SELECT u.id AS user_id, u.name, u.email, u.organization_id, o.name AS organization_name, s.expires_at
+            row = db.execute("""SELECT u.id AS user_id, u.name, u.email, u.organization_id, o.name AS organization_name,
+                                       s.expires_at, s.last_seen_at
                                 FROM sessions s JOIN users u ON u.id = s.user_id JOIN organizations o ON o.id = u.organization_id
                                 WHERE s.token_hash = %s""", (token_hash,)).fetchone()  # one round trip per request
-            if row is None or row["expires_at"] <= utc_now():
+            now = datetime.now(timezone.utc)
+            if row is None or row["expires_at"] <= now.isoformat():
                 raise HTTPException(401, NOT_LOGGED_IN)
-            if row["expires_at"] < in_days(SESSION_DAYS - 1):  # slide the expiry at most once a day
+            idle = row["last_seen_at"] <= (now - timedelta(minutes=IDLE_MINUTES)).isoformat()
+            if idle:  # unused for 12 minutes: ended (deleted here, refused below, after the deletion is committed)
+                db.execute("DELETE FROM sessions WHERE token_hash = %s", (token_hash,))
+            elif row["last_seen_at"] <= (now - timedelta(seconds=TOUCH_SECONDS)).isoformat():  # not a write per request
+                db.execute("UPDATE sessions SET last_seen_at = %s WHERE token_hash = %s", (now.isoformat(), token_hash))
+            if not idle and row["expires_at"] < in_days(SESSION_DAYS - 1):  # slide the expiry at most once a day
                 db.execute("UPDATE sessions SET expires_at = %s WHERE token_hash = %s", (in_days(SESSION_DAYS), token_hash))
                 set_session_cookie(request, response, token)  # the browser's cookie must slide with the server's expiry
+        if idle:
+            raise HTTPException(401, NOT_LOGGED_IN)
         return dict(row)
 
     def issue_confirmation(db, user_id: str, email: str, name: str, base_url: str, background: BackgroundTasks) -> None:
@@ -276,10 +290,19 @@ def create_auth(storage: Storage, email_sender=None):
                 logger.info("Password reset link issued user=%s", user["id"])
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
+    @router.post("/confirm/check")
+    def confirm_check(body: ConfirmCheckBody):
+        """Whether a confirmation link can still be used, so the page can send a used or expired one to the login page
+        without asking for a password. Uses nothing up; the link itself is the only secret."""
+        with storage.database() as db:
+            row = db.execute("SELECT 1 FROM email_confirmations WHERE token_hash = %s AND used_at IS NULL AND expires_at > %s",
+                             (hash_session_token(body.token), utc_now())).fetchone()
+        return {"valid": row is not None}
+
     @router.post("/confirm")
-    def confirm_email(body: ConfirmBody, request: Request):
+    def confirm_email(body: ConfirmBody, request: Request, response: Response):
         """Confirming needs the account's password too: someone who signed up with another person's address
-        can't get that person to confirm the account with one click."""
+        can't get that person to confirm the account with one click (and be logged in to it). Success logs in."""
         token_hash, ip = hash_session_token(body.token), request_origin(request)[0]
         with storage.database() as db:
             user = db.execute("""SELECT u.id, u.email, u.password_hash FROM email_confirmations c JOIN users u ON u.id = c.user_id
@@ -299,6 +322,7 @@ def create_auth(storage: Storage, email_sender=None):
             if used is None:
                 raise HTTPException(400, CONFIRM_INVALID)
             db.execute("UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, %s) WHERE id = %s", (now, used["user_id"]))
+            start_session(db, request, response, used["user_id"])  # the first login comes with confirming
         logger.info("Email confirmed user=%s", used["user_id"])
         return {"message": EMAIL_CONFIRMED}
 

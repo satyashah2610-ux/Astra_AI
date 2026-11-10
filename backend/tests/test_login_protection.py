@@ -15,7 +15,7 @@ LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
 NETWORK_LOCKED = "Too many failed attempts from this network. Wait 15 minutes and try again."
 CHECK_EMAIL = "Account created. Check your email for a link to confirm your address, then log in."
 NOT_CONFIRMED = "Confirm your email address first: use the link we sent you, or send a new one."
-CONFIRMED = "Email confirmed. Log in to continue."
+CONFIRMED = "Email confirmed."  # and logged in (test_confirm_login_and_idle)
 RESEND_ANSWER = "If that account still needs confirming, we’ve sent a new link."
 
 
