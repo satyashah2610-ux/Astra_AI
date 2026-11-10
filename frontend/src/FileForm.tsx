@@ -42,7 +42,6 @@ export default function FileForm({ agreements, initial, mode, busy, onSubmit, on
   const set = (key: keyof FileValues, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
 
   return <form className="file-form" noValidate onSubmit={event => submit(mode === 'create' ? 'send' : 'save', event)} aria-labelledby="file-form-title">
-    <div className="tiny-eyebrow">{mode === 'create' ? 'ONE FILE PER JOB' : 'DRAFT'}</div>
     <h2 id="file-form-title">{mode === 'create' ? 'New file' : 'Edit file'}</h2>
     {!anySendable && <p className="form-note">Prepare an agreement with at least one signature box in <strong>Agreements</strong> first.</p>}
     {FIELDS.map(field => {

@@ -166,7 +166,15 @@ it('counts only signature boxes as signature fields', async () => {
   render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByRole('heading', { name: 'Consulting agreement' });
   expect(screen.getByText('1 signature field')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /Notes only/ })).toHaveTextContent('Draft');
+  expect(screen.getByRole('button', { name: /Notes only/ })).toHaveTextContent('No signature box yet');
+
+  expect(screen.getByRole('button', { name: /Consulting agreement/ })).toHaveTextContent('Ready to send');
+});
+
+it('names the sidebar tabs on hover, for when only their icons show', async () => {
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
+  expect(await screen.findByRole('tab', { name: 'Agreements' })).toHaveAttribute('title', 'Agreements');
+  expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('title', 'Files');
 });
 
 it('shows who is signed in and logs out from the header', async () => {

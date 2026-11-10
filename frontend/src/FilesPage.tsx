@@ -103,20 +103,23 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   const startCreate = () => { setError(''); setMode('create'); };
 
   return <section className="files-page">
-    <div className="files-toolbar">
-      <button className="primary" disabled={busy} onClick={startCreate}><Plus size={17} />New file</button>
-      <button className="secondary" disabled={busy} onClick={() => void load()}><RefreshCw size={15} />Refresh</button>
+    <div className="page-heading">
+      <div><h1>Files</h1><p>One file per job: send its agreement for signature and keep the signed copy.</p></div>
+      <div className="files-toolbar">
+        <button className="secondary" disabled={busy} onClick={() => void load()}><RefreshCw size={15} />Refresh</button>
+        <button className="primary" disabled={busy} onClick={startCreate}><Plus size={17} />New file</button>
+      </div>
     </div>
     {error && <div className="error-banner" role="alert"><span>{error}</span><div><button aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button></div></div>}
     <div className="workspace files-workspace">
       <aside className="library">
-        <div className="library-title"><h2>Files</h2><span className="count">{files.length}</span></div>
+        <div className="library-title"><h2>All files</h2><span className="count">{files.length}</span></div>
         <label className="search"><Search size={15} /><input aria-label="Search files" placeholder="Find a file, client or signer..." value={search} onChange={e => setSearch(e.target.value)} /></label>
         <div className="status-filters" role="group" aria-label="Filter by status">{FILTERS.map(value => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : STATUS_LABELS[value]}</button>)}</div>
         {loading ? <p className="muted loading"><Loader2 className="spin" size={16} />Loading files...</p>
           : <ul className="file-list" aria-label="Files">{visible.map(file => <li key={file.id}>
             <button className={`file-item ${file.id === selectedId ? 'active' : ''}`} disabled={busy} onClick={() => { setSelectedId(file.id); setMode('view'); setError(''); }}>
-              <span className="file-item-text"><strong>{file.title}</strong><small>{file.client_name}</small></span>
+              <span className="file-item-text"><strong>{file.title}</strong><small><span>{file.client_name}</span>{file.signer_name !== file.client_name && <span>{file.signer_name}</span>}</small></span>
               <span className={`status-badge ${file.status}`}>{STATUS_LABELS[file.status]}</span>
             </button></li>)}</ul>}
         {!loading && files.length > 0 && visible.length === 0 && <p className="library-empty">No matching files.</p>}
@@ -125,12 +128,12 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
       <div className="file-detail">
         {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, email) => void submit(values, action, email)} onCancel={() => setMode('view')}
           initial={mode === 'edit' && selected ? { title: selected.title, client_name: selected.client_name, signer_name: selected.signer_name, signer_email: selected.signer_email, agreement_id: selected.agreement_id, message: selected.message ?? '' } : undefined} />
-        : !selected ? <div className="empty-state files-empty"><span className="large-icon"><FileSignature size={30} /></span><span className="tag">ONE FILE PER JOB</span><h2>No files yet</h2>
+        : !selected ? <div className="empty-state files-empty"><span className="large-icon"><FileSignature size={30} /></span><h2>No files yet</h2>
             <p>Create a file for each new job. Astra Sign sends the client your agreement<br />and keeps the signed copy with the file.</p>
             <button className="primary" onClick={startCreate}><Plus size={16} />New file</button></div>
         : <article className="file-card">
           <header className="file-card-header">
-            <div><div className="tiny-eyebrow">FILE</div><h2>{selected.title}</h2></div>
+            <h2>{selected.title}</h2>
             <span className={`status-badge large ${selected.status}`} data-testid="file-status">{STATUS_LABELS[selected.status]}</span>
           </header>
           <dl className="file-facts">

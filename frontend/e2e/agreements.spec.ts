@@ -162,7 +162,7 @@ test('duplicate uploads show numbered names in the library and editor after relo
   }
   await page.reload();
   for (const name of ['Repeated agreement', 'Repeated agreement (1)', 'Repeated agreement (2)']) {
-    await page.getByRole('button', { name: `${name} 2 pages · Draft`, exact: true }).click();
+    await page.getByRole('button', { name: `${name} 2 pages No signature box yet`, exact: true }).click();
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   }
   await page.screenshot({ path: 'test-results/duplicate-agreements.png', fullPage: true });

@@ -38,7 +38,7 @@ Left for later: an unconfirmed sign-up keeps its email reserved (someone else's 
 
 **API:** `POST /api/auth/signup` (message says to check the email when a link was sent); `POST /api/auth/login` (429 / 403 as above); `POST /api/auth/confirm {token, password}` (200; 400 for an invalid/expired/used link; 401 wrong password; 429 locked); `POST /api/auth/resend-confirmation {email}` (202). `POST /api/auth/reset` also confirms the email and clears failures.
 
-**Frontend:** `/confirm-email#<token>` page confirms on open and links to log in; the login page shows the 429/403 messages, with **Send a new confirmation link** for 403.
+**Frontend:** `/confirm-email#<token>` page asks for the account's password, confirms, and links to log in; the login page shows the 429/403 messages, with **Send a new confirmation link** for 403.
 
 ## Tests (written first)
 
