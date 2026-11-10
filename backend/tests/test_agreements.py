@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 
 from app.main import create_app
+from tests.staff import StaffClient
 
 
 def pdf_bytes(pages=2, encrypted=False):
@@ -21,7 +22,7 @@ def pdf_bytes(pages=2, encrypted=False):
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         yield client
 
 
@@ -64,10 +65,10 @@ def test_marks_can_be_saved_moved_resized_and_removed(client):
 
 
 def test_persistence_survives_app_restart(tmp_path):
-    with TestClient(create_app(tmp_path)) as first:
+    with StaffClient(create_app(tmp_path)) as first:
         identifier = upload(first).json()["id"]
         save(first, identifier, [mark(page=2)])
-    with TestClient(create_app(tmp_path)) as restarted:
+    with StaffClient(create_app(tmp_path)) as restarted:
         response = restarted.get(f"/api/agreements/{identifier}")
         assert response.json()["marks"] == [mark(page=2)]
         assert restarted.get(f"/api/agreements/{identifier}/pdf").status_code == 200
@@ -133,7 +134,7 @@ def test_rotated_page_can_be_uploaded_and_marked(client):
 
 
 def test_delete_removes_pdf_marks_and_record_after_restart(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         identifier = upload(client).json()["id"]
         save(client, identifier, [mark()])
         pdf_path = tmp_path / "uploads" / f"{identifier}.pdf"
@@ -144,7 +145,7 @@ def test_delete_removes_pdf_marks_and_record_after_restart(tmp_path):
         assert not pdf_path.exists()
         assert client.get(f"/api/agreements/{identifier}/pdf").status_code == 404
         assert save(client, identifier, [], version=1).status_code == 404
-    with TestClient(create_app(tmp_path)) as restarted:
+    with StaffClient(create_app(tmp_path)) as restarted:
         assert restarted.get("/api/agreements").json() == []
         assert restarted.get(f"/api/agreements/{identifier}").status_code == 404
 

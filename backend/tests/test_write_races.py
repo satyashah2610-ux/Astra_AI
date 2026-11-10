@@ -14,6 +14,7 @@ import psycopg
 
 from app.database import write_lock
 from app.main import create_app
+from tests.staff import StaffClient
 from tests.test_agreements import mark, save, upload
 from tests.test_files import file_body
 
@@ -34,7 +35,7 @@ def race(tmp_path, agreement_id, send):
 
 
 def test_file_cannot_be_created_for_an_agreement_deleted_mid_request(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         agreement = upload(client).json()
         response = race(tmp_path, agreement["id"], lambda: client.post("/api/files", json=file_body(agreement["id"])))
         assert response.status_code == 422
@@ -42,7 +43,7 @@ def test_file_cannot_be_created_for_an_agreement_deleted_mid_request(tmp_path):
 
 
 def test_saving_marks_on_an_agreement_deleted_mid_request_is_404_not_a_conflict(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         agreement = upload(client).json()
         response = race(tmp_path, agreement["id"], lambda: save(client, agreement["id"], [mark()]))
         assert response.status_code == 404

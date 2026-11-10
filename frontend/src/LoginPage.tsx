@@ -1,0 +1,77 @@
+import { useState, type FormEvent } from 'react';
+import { Eye, EyeOff, Loader2, LogIn, Sparkles, UserPlus } from 'lucide-react';
+import { authApi, type Account } from './auth';
+
+type Mode = 'login' | 'signup';
+type Values = { company: string; name: string; email: string; password: string };
+type Errors = Partial<Record<keyof Values, string>>;
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+function check(values: Values, mode: Mode): Errors {
+  const errors: Errors = {};
+  if (mode === 'signup' && !values.company.trim()) errors.company = 'Enter your company name.';
+  if (mode === 'signup' && !values.name.trim()) errors.name = 'Enter your name.';
+  if (!EMAIL.test(values.email.trim())) errors.email = 'Enter a valid email address.';
+  if (mode === 'signup' && values.password.length < 10) errors.password = 'Use at least 10 characters.';
+  if (mode === 'login' && !values.password) errors.password = 'Enter your password.';
+  return errors;
+}
+
+/** Staff log in or create their company's account. Signers never see this page. */
+export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Account) => void }) {
+  const [mode, setMode] = useState<Mode>('login');
+  const [values, setValues] = useState<Values>({ company: '', name: '', email: '', password: '' });
+  const [errors, setErrors] = useState<Errors>({});
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const set = (key: keyof Values, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
+  function switchTo(next: Mode) { setMode(next); setErrors({}); setError(''); }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const found = check(values, mode);
+    setErrors(found); setError('');
+    if (Object.keys(found).length) return;
+    setBusy(true);
+    try {
+      const email = values.email.trim();
+      onSignedIn(mode === 'login'
+        ? await authApi.login(email, values.password)
+        : await authApi.signup({ company: values.company.trim(), name: values.name.trim(), email, password: values.password }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
+      if (mode === 'login') set('password', '');
+    } finally { setBusy(false); }
+  }
+
+  const field = (key: keyof Values, label: string, type = 'text', autoComplete = 'off') => <div className={`form-field ${errors[key] ? 'invalid' : ''}`}>
+    <label htmlFor={`auth-${key}`}>{label}</label>
+    <div className={key === 'password' ? 'password-row' : undefined}>
+      <input id={`auth-${key}`} type={key === 'password' && showPassword ? 'text' : type} value={values[key]} autoComplete={autoComplete} disabled={busy}
+        maxLength={key === 'email' ? 254 : 200} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `auth-${key}-error` : undefined}
+        onChange={e => set(key, e.target.value)} />
+      {key === 'password' && <button type="button" className="icon-button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
+    </div>
+    {errors[key] && <small className="field-error" id={`auth-${key}-error`}>{errors[key]}</small>}
+  </div>;
+
+  return <div className="auth-shell">
+    <form className="auth-card" noValidate onSubmit={event => void submit(event)} aria-labelledby="auth-title">
+      <span className="brand auth-brand"><span className="brand-icon"><Sparkles size={20} strokeWidth={1.6} /></span>Astra Sign</span>
+      <h1 id="auth-title">{mode === 'login' ? 'Log in to Astra Sign' : 'Create your company account'}</h1>
+      <p className="auth-intro">{mode === 'login' ? 'Prepare agreements, send them to clients and keep every signed copy with its file.' : 'One account per company to start. Your clients never need an account: they sign from a secure link.'}</p>
+      {mode === 'signup' && field('company', 'Company name', 'text', 'organization')}
+      {mode === 'signup' && field('name', 'Your name', 'text', 'name')}
+      {field('email', 'Work email', 'email', 'email')}
+      {field('password', 'Password', 'password', mode === 'login' ? 'current-password' : 'new-password')}
+      {mode === 'signup' && !errors.password && <small className="field-hint">At least 10 characters. A short phrase is easiest to remember.</small>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={16} /> : mode === 'login' ? <LogIn size={16} /> : <UserPlus size={16} />}{mode === 'login' ? 'Log in' : 'Create account'}</button>
+      <p className="auth-switch">{mode === 'login'
+        ? <>New to Astra Sign? <button type="button" className="text-button" onClick={() => switchTo('signup')}>Create an account</button></>
+        : <>Already have an account? <button type="button" className="text-button" onClick={() => switchTo('login')}>Log in instead</button></>}</p>
+    </form>
+  </div>;
+}

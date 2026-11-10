@@ -4,14 +4,24 @@ export type MarkType = 'signature' | 'text' | 'comment';
 export type Mark = Box & { id: string; page: number; type?: MarkType; text?: string };
 export type Agreement = { id: string; name: string; filename: string; page_count: number; marks: Mark[]; version: number; created_at: string; updated_at: string };
 
+/** Fired on window when the server says the staff session has ended. */
+export const LOGGED_OUT_EVENT = 'astra:logged-out';
+
+/** An error from the API, with the HTTP status (0 when the server couldn't be reached). */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 /** Fetch, turning network failures and error responses into Errors with the server's message. */
 async function send(url: string, options?: RequestInit): Promise<Response> {
   let response: Response;
   try { response = await fetch(url, options); }
-  catch { throw new Error('Cannot reach the server. Check your connection and try again.'); }
+  catch { throw new ApiError('Cannot reach the server. Check your connection and try again.', 0); }
   if (!response.ok) {
+    // A staff call refused for lack of a login means the session ended: let the app return to the login page.
+    if (response.status === 401 && !url.startsWith('/api/auth/')) window.dispatchEvent(new Event(LOGGED_OUT_EVENT));
     const error = await response.json().catch(() => ({}));
-    throw new Error(typeof error.detail === 'string' ? error.detail : 'Something went wrong. Check your document and try again.');
+    throw new ApiError(typeof error.detail === 'string' ? error.detail : 'Something went wrong. Check your document and try again.', response.status);
   }
   return response;
 }

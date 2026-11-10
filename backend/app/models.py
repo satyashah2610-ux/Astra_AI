@@ -162,3 +162,18 @@ class SignSubmission(BaseModel):
         if "name" in kinds:
             printable(self.name)  # the name is printed into a Name item
         return self
+
+
+class SignupBody(BaseModel):
+    """A new company and its first staff member."""
+    model_config = ConfigDict(extra="forbid")
+    company: Name
+    name: Name
+    email: Email
+    password: Annotated[str, StringConstraints(min_length=10, max_length=200), AfterValidator(no_nul)]
+
+
+class LoginBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: Email
+    password: Annotated[str, StringConstraints(min_length=1, max_length=200), AfterValidator(no_nul)]

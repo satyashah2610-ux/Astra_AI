@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
+import { signUp } from './helpers';
+
+// Staff pages and APIs need a login: every test starts with a fresh company account.
+test.beforeEach(async ({ page }) => { await signUp(page); });
 
 async function drawBox(page: Page) {
   const overlay = page.getByTestId('pdf-overlay');

@@ -79,3 +79,16 @@ describe('fileApi', () => {
     expect(JSON.parse(options.body as string)).toMatchObject({ title: 'Smith kitchen', signer_email: 'jordan@example.com' });
   });
 });
+
+describe('an expired session', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('announces that the user is logged out and still reports the error', async () => {
+    const { LOGGED_OUT_EVENT } = await import('./api');
+    const heard = vi.fn();
+    window.addEventListener(LOGGED_OUT_EVENT, heard);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Log in to continue.' }), { status: 401 })));
+    await expect(fileApi.list()).rejects.toThrow('Log in to continue.');
+    expect(heard).toHaveBeenCalledTimes(1);
+    window.removeEventListener(LOGGED_OUT_EVENT, heard);
+  });
+});

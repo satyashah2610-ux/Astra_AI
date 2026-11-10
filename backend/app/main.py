@@ -9,9 +9,10 @@ from contextlib import asynccontextmanager
 
 import psycopg
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pypdf import PdfReader
+from .auth import create_auth
 from .database import write_lock
 from .models import SaveMarks
 from .files import create_files_router
@@ -67,31 +68,40 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
         if row is None:
             raise HTTPException(404, "Agreement not found.")
         result = dict(row)
+        result.pop("organization_id", None)  # internal: never sent to the browser
         result["marks"] = json.loads(result["marks"])
         return result
 
-    def find(identifier):
+    def fetch(db, identifier, organization_id):
+        """An agreement of this company only: another company's id is simply not found."""
+        return db.execute("SELECT * FROM agreements WHERE id = %s AND organization_id = %s", (identifier, organization_id)).fetchone()
+
+    def find(identifier, organization_id):
         with database() as db:
-            return item(db.execute("SELECT * FROM agreements WHERE id = %s", (identifier,)).fetchone())
+            return item(fetch(db, identifier, organization_id))
+
+    auth_router, current_user = create_auth(storage)
+    Staff = Depends(current_user)  # every staff endpoint needs a logged-in user; signing endpoints don't
 
     app = FastAPI(title="Astra Sign", version="0.1.0", lifespan=lifespan)
     app.add_middleware(SecurityMiddleware,
                        allowed_hosts=parse_allowed_hosts(os.environ.get("ASTRA_ALLOWED_HOSTS")),
                        body_limit=MAX_BYTES + 1024 * 1024,  # the PDF plus multipart overhead
                        body_limit_message="PDF must be 20 MB or smaller.",
-                       small_body_prefixes=("/api/signing",))  # public endpoints: 1 MiB is ample
+                       small_body_prefixes=("/api/signing", "/api/auth"))  # public endpoints: 1 MiB is ample
 
     @app.get("/api/health")
     def health():
         return {"status": "ok"}
 
     @app.get("/api/agreements")
-    def list_agreements():
+    def list_agreements(account: dict = Staff):
         with database() as db:
-            return [item(row) for row in db.execute("SELECT * FROM agreements ORDER BY created_at DESC, id DESC")]
+            return [item(row) for row in db.execute("SELECT * FROM agreements WHERE organization_id = %s ORDER BY created_at DESC, id DESC",
+                                                     (account["organization_id"],))]
 
     @app.post("/api/agreements", status_code=201)
-    def upload_agreement(file: UploadFile):
+    def upload_agreement(file: UploadFile, account: dict = Staff):
         filename = PureWindowsPath((file.filename or "agreement.pdf").replace("\x00", "")).name
         try:
             if not filename.lower().endswith(".pdf"):
@@ -110,11 +120,13 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
             with database() as db:
                 # Allocate and insert under one write lock, including parallel uploads.
                 write_lock(db)
-                used_names = {row['name'].casefold() for row in db.execute("SELECT name FROM agreements")}
+                used_names = {row['name'].casefold() for row in db.execute("SELECT name FROM agreements WHERE organization_id = %s",
+                                                                             (account["organization_id"],))}
                 name = unique_name(filename[:-4][:200] or "Untitled agreement", used_names)
                 try:
-                    db.execute("INSERT INTO agreements (id, name, filename, page_count, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                               (identifier, name, filename[:255], count, now, now))
+                    db.execute("INSERT INTO agreements (id, organization_id, name, filename, page_count, created_at, updated_at) "
+                               "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                               (identifier, account["organization_id"], name, filename[:255], count, now, now))
                 except psycopg.errors.UniqueViolation as exc:
                     # Python's casefold() and PostgreSQL's lower() can disagree on rare characters.
                     raise HTTPException(409, "An agreement with a very similar name already exists. Rename the PDF and upload it again.") from exc
@@ -122,27 +134,27 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
             pdf_path.unlink(missing_ok=True)
             raise
         logger.info("Agreement uploaded id=%s pages=%s", identifier, count)
-        return find(identifier)
+        return find(identifier, account["organization_id"])
 
     @app.get("/api/agreements/{identifier}")
-    def get_agreement(identifier: str):
-        return find(identifier)
+    def get_agreement(identifier: str, account: dict = Staff):
+        return find(identifier, account["organization_id"])
 
     @app.get("/api/agreements/{identifier}/pdf")
-    def get_pdf(identifier: str):
-        agreement = find(identifier)
+    def get_pdf(identifier: str, account: dict = Staff):
+        agreement = find(identifier, account["organization_id"])
         path = storage.template_pdf(agreement["id"])
         if not path.is_file():
             raise HTTPException(404, "The PDF file is unavailable. Upload the agreement again.")
         return FileResponse(path, media_type="application/pdf", filename=agreement["filename"], content_disposition_type="inline")
 
     @app.delete("/api/agreements/{identifier}", status_code=204)
-    def delete_agreement(identifier: str):
+    def delete_agreement(identifier: str, account: dict = Staff):
         try:
             with database() as db:
                 # Serialize deletion against saves and other deletion requests.
                 write_lock(db)
-                agreement = item(db.execute("SELECT * FROM agreements WHERE id = %s", (identifier,)).fetchone())
+                agreement = item(fetch(db, identifier, account["organization_id"]))
                 drafts = db.execute("SELECT COUNT(*) FROM files WHERE agreement_id = %s AND status = %s",
                                     (identifier, FileStatus.DRAFT)).fetchone()[0]
                 if drafts:
@@ -159,10 +171,10 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
         return Response(status_code=204)
 
     @app.put("/api/agreements/{identifier}/marks")
-    def save_marks(identifier: str, body: SaveMarks):
+    def save_marks(identifier: str, body: SaveMarks, account: dict = Staff):
         with database() as db:
             write_lock(db)  # serialize against deletion so a vanished agreement gives 404, not 409
-            agreement = item(db.execute("SELECT * FROM agreements WHERE id = %s", (identifier,)).fetchone())
+            agreement = item(fetch(db, identifier, account["organization_id"]))
             if any(mark.page > agreement["page_count"] for mark in body.marks):
                 raise HTTPException(422, "An item on the template refers to a page that does not exist.")
             marks = json.dumps(body.stored_marks())
@@ -170,11 +182,12 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None) ->
                                 (marks, utc_now(), identifier, body.version))
             if result.rowcount != 1:
                 raise HTTPException(409, "This agreement was changed in another tab. Reload the saved version before editing again.")
-            updated = item(db.execute("SELECT * FROM agreements WHERE id = %s", (identifier,)).fetchone())
+            updated = item(fetch(db, identifier, account["organization_id"]))
         logger.info("Agreement markings saved id=%s version=%s count=%s", identifier, updated["version"], len(body.marks))
         return updated
 
-    app.include_router(create_files_router(storage))
+    app.include_router(auth_router)
+    app.include_router(create_files_router(storage, current_user))
     app.include_router(create_signing_router(storage))
 
     @app.get("/api/sample-agreement.pdf")

@@ -6,6 +6,7 @@ from pypdf import PdfReader
 
 import app.signed_documents as signed_documents
 from app.main import create_app
+from tests.staff import StaffClient
 from tests.signature_images import data_url
 from tests.test_agreements import pdf_bytes
 from tests.test_files import create_file, prepared_agreement, token_from
@@ -13,7 +14,7 @@ from tests.test_files import create_file, prepared_agreement, token_from
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path), headers={"User-Agent": "Test Browser"}) as client:
+    with StaffClient(create_app(tmp_path), headers={"User-Agent": "Test Browser"}) as client:
         yield client
 
 
@@ -99,12 +100,12 @@ def test_deleted_template_does_not_affect_the_signed_pdf(client):
 
 
 def test_signed_pdf_survives_restart(tmp_path):
-    with TestClient(create_app(tmp_path)) as first:
+    with StaffClient(create_app(tmp_path)) as first:
         item, auth = sent(first)
         sign(first, auth)
         before = staff_pdf(first, item)
         assert before.status_code == 200 and before.content.startswith(b"%PDF")
-    with TestClient(create_app(tmp_path)) as restarted:
+    with StaffClient(create_app(tmp_path)) as restarted:
         assert staff_pdf(restarted, item).content == before.content
 
 

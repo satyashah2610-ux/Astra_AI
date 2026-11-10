@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { signUp } from './helpers';
+
+// Staff pages and APIs need a login: every test starts with a fresh company account.
+test.beforeEach(async ({ page }) => { await signUp(page); });
 
 async function draw(page: Page, start = { x: .12, y: .57 }, end = { x: .48, y: .65 }) {
   const overlay = page.getByTestId('pdf-overlay');
@@ -10,7 +14,8 @@ async function draw(page: Page, start = { x: .12, y: .57 }, end = { x: .48, y: .
   await page.mouse.up();
 }
 
-test('real PDF upload, draw, move, resize, save, reopen and remove', async ({ page, request }) => {
+test('real PDF upload, draw, move, resize, save, reopen and remove', async ({ page }) => {
+  const request = page.request;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
@@ -119,7 +124,8 @@ test('draws consecutive boxes and selects an existing box without changing tools
   await expect(page.getByText('All changes saved')).toBeVisible();
 });
 
-test('Astra Sign branding and confirmed deletion persist after reload', async ({ page, request }) => {
+test('Astra Sign branding and confirmed deletion persist after reload', async ({ page }) => {
+  const request = page.request;
   await page.goto('/');
   await expect(page).toHaveTitle('Astra Sign — Agreements');
   await expect(page.getByRole('link', { name: 'Astra Sign Agreements' })).toBeVisible();
@@ -145,7 +151,8 @@ test('Astra Sign branding and confirmed deletion persist after reload', async ({
   await expect(page.getByRole('button', { name: /Delete this test agreement 2 pages/ })).toHaveCount(0);
 });
 
-test('duplicate uploads show numbered names in the library and editor after reload', async ({ page, request }) => {
+test('duplicate uploads show numbered names in the library and editor after reload', async ({ page }) => {
+  const request = page.request;
   await page.goto('/');
   const pdf = await request.get('/api/sample-agreement.pdf');
   const file = { name: 'Repeated agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() };

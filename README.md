@@ -41,6 +41,7 @@ On macOS/Linux use `.venv/bin/python` and `npm` instead. Node.js 24 and Python 3
 
 ## Try the feature
 
+1. On the login page click **Create an account**: your company name, your name, work email and a password of at least 10 characters. (Signers never need an account.)
 1. Click **Try a sample agreement**, or upload `examples/sample-agreement.pdf` (or your own PDF).
 2. For the sample, use **Next page** to reach the signature area on page 2.
 3. Click and drag on an empty part of the PDF to draw a signature box. Alternatively, click **Add signature box** in the toolbar for a default-sized box. Drawing and moving work together without switching tools.
@@ -59,7 +60,7 @@ PostgreSQL stores agreement metadata, editable signature coordinates, files, sig
 
 ## Security
 
-- **Staff login is not built yet.** Run the backend only on `127.0.0.1` (as above) until it is. Anyone who can reach the API can manage agreements and files.
+- **Staff accounts.** Every staff page and API needs a login (email + password). Each company sees only its own agreements and files; another company's ids return 404. Passwords are stored as salted scrypt hashes; the session is an HttpOnly, SameSite=Lax cookie whose value is stored only as a hash, valid 14 days and ended by **Log out**. Set `ASTRA_SECURE_COOKIES=1` when serving over HTTPS behind a proxy. Signers use their link only, never an account. See [docs/design/08-accounts-and-login.md](docs/design/08-accounts-and-login.md).
 - The backend only answers requests addressed to an allowed host name (default `127.0.0.1,localhost`), which blocks DNS-rebinding attacks from other websites. When deploying, set `ASTRA_ALLOWED_HOSTS` to the public host name, e.g. `ASTRA_ALLOWED_HOSTS=sign.example.com`.
 - State-changing requests from other websites are rejected (`Origin` / `Sec-Fetch-Site` checks). Any proxy in front of the backend must pass the browser's `Host` header through unchanged; the Vite dev proxy is configured this way.
 - Request bodies are size-limited while they stream in: 21 MB for uploads, 1 MB for the public signing endpoints.
@@ -117,7 +118,7 @@ The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides 
 - Files tab: a file is one job for one client. **New file** → fill in the job, client, signer and agreement → **Create and send** (or **Save as draft**). The signing link appears with **Copy link**; paste it into an email to the signer. It is shown only once (only a hash is stored); **Reissue link** makes a new one and stops the old one. Each file shows its status (Draft, Sent, Viewed, Signed), a timeline, and **Download signed PDF** once signed. The list refreshes when you return to the window, or with **Refresh**. See [docs/design/05-files-screen.md](docs/design/05-files-screen.md).
 - Company text and comments: in the agreement editor, **Add text** places text that is printed onto the document when it is sent (the document hash covers it); **Add comment** places a note the client sees next to that spot while signing, never printed.
 - Client items: on the signing page the client picks **Tick, Dot, Text, Name, Date, Initials or Signature** and taps anywhere on any page; items can be dragged, resized and removed. Name and Date are filled in by the server (the signing date in the client's time zone). Initials are adopted once, like the signature. Everything is stamped into the signed PDF and listed on the certificate. Printed text supports Western European characters; other scripts are refused with a clear message rather than printed as boxes. See [docs/design/06-text-comments-and-signer-items.md](docs/design/06-text-comments-and-signer-items.md).
-- Not built yet: email delivery from the app, staff login and hosting.
+- Not built yet: email delivery from the app (needs a verified email domain), inviting colleagues, password reset, login rate limiting, and hosting.
 - This first version is a local single-workspace app. Authentication and company data isolation must be added before hosting it for multiple companies.
 - PDFs must be unencrypted, no larger than 20 MiB, and contain 1–100 pages. PDF pages are rendered as a canvas; selectable PDF text and screen-reader transcription of document contents are not included yet.
 

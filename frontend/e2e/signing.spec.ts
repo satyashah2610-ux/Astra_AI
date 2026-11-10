@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { signUp } from './helpers';
+
+// Staff pages and APIs need a login: every test starts with a fresh company account.
+test.beforeEach(async ({ page }) => { await signUp(page); });
 
 /** Staff side through the API: upload the sample, place one box on page 2, create a file and send it. */
 async function sendFile(request: APIRequestContext, signer = 'Jordan Smith') {
@@ -16,7 +20,8 @@ async function timeline(request: APIRequestContext, fileId: string) {
   return (await (await request.get(`/api/files/${fileId}/events`)).json()).map((event: { type: string }) => event.type);
 }
 
-test('a client opens the link, types a signature, consents and signs', async ({ page, request }) => {
+test('a client opens the link, types a signature, consents and signs', async ({ page }) => {
+  const request = page.request;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const { fileId, path, agreement } = await sendFile(request);
@@ -63,7 +68,8 @@ test('a client opens the link, types a signature, consents and signs', async ({ 
   expect(errors).toEqual([]);
 });
 
-test('a client draws a signature on a phone', async ({ page, request }) => {
+test('a client draws a signature on a phone', async ({ page }) => {
+  const request = page.request;
   await page.setViewportSize({ width: 390, height: 844 });
   const { fileId, path } = await sendFile(request, 'Alex Rivera');
   await page.goto(path);
@@ -95,7 +101,8 @@ test('a client draws a signature on a phone', async ({ page, request }) => {
   expect((await (await request.get(`/api/files/${fileId}`)).json()).status).toBe('signed');
 });
 
-test('an invalid or replaced link explains what to do', async ({ page, request }) => {
+test('an invalid or replaced link explains what to do', async ({ page }) => {
+  const request = page.request;
   const { fileId, path } = await sendFile(request);
   await request.post(`/api/files/${fileId}/link`);
   await page.goto(path);

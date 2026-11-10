@@ -3,6 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from tests.staff import StaffClient
 from tests.signature_images import data_url
 from tests.test_agreements import pdf_bytes, upload
 from tests.test_files import create_file, prepared_agreement, token_from
@@ -10,7 +11,7 @@ from tests.test_files import create_file, prepared_agreement, token_from
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         yield client
 
 

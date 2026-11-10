@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from tests.staff import StaffClient
 from app.tokens import hash_token
 from tests import db
 from tests.test_agreements import mark, pdf_bytes, save, upload
@@ -12,7 +13,7 @@ from tests.test_agreements import mark, pdf_bytes, save, upload
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         yield client
 
 
@@ -169,7 +170,7 @@ def test_send_twice_is_rejected(client):
 
 
 def test_simultaneous_sends_produce_exactly_one_link(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         item = create_file(client, prepared_agreement(client)["id"]).json()
         with ThreadPoolExecutor(max_workers=4) as pool:
             codes = list(pool.map(lambda _: client.post(f"/api/files/{item['id']}/send").status_code, range(4)))
@@ -242,10 +243,10 @@ def test_signed_file_cannot_be_deleted(client, tmp_path):
 
 def test_files_and_snapshots_survive_restart(tmp_path):
     content = pdf_bytes()
-    with TestClient(create_app(tmp_path)) as first:
+    with StaffClient(create_app(tmp_path)) as first:
         item = create_file(first, prepared_agreement(first, content)["id"]).json()
         first.post(f"/api/files/{item['id']}/send")
-    with TestClient(create_app(tmp_path)) as restarted:
+    with StaffClient(create_app(tmp_path)) as restarted:
         reloaded = restarted.get(f"/api/files/{item['id']}").json()
         assert reloaded["status"] == "sent"
         assert reloaded["field_count"] == 1

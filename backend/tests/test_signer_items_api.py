@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from app.main import create_app
+from tests.staff import StaffClient
 from tests import db
 from tests.signature_images import data_url, png_bytes
 from tests.test_agreements import mark, pdf_bytes, save, upload
@@ -19,7 +20,7 @@ SIGNATURE = mark(id="s1", page=2, y=.8)
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         yield client
 
 

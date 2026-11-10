@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { signUp } from './helpers';
+
+// Staff pages and APIs need a login: every test starts with a fresh company account.
+test.beforeEach(async ({ page }) => { await signUp(page); });
 
 /** Tap a point given as fractions of an element's box. */
 async function tapAt(page: Page, target: Locator, x: number, y: number) {
@@ -98,7 +102,8 @@ test('staff add text and a comment; the client places ticks, dots, text, name, d
   expect(errors).toEqual([]);
 });
 
-test('on a phone the page still scrolls when no tool is picked, and a tap places an item', async ({ page, request }) => {
+test('on a phone the page still scrolls when no tool is picked, and a tap places an item', async ({ page }) => {
+  const request = page.request;
   await page.setViewportSize({ width: 390, height: 844 });
   const pdf = await (await request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await request.post('/api/agreements', { multipart: { file: { name: 'Phone items.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();

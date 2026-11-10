@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from tests.staff import StaffClient
 from tests import db
 from app.signing import CONSENT_TEXT
 from tests.signature_images import data_url, png_bytes
@@ -16,7 +17,7 @@ BROWSER = "Mozilla/5.0 (Test Browser)"
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path), headers={"User-Agent": BROWSER}) as client:
+    with StaffClient(create_app(tmp_path), headers={"User-Agent": BROWSER}) as client:
         yield client
 
 
@@ -153,7 +154,7 @@ def test_signed_link_still_shows_the_signed_state(client):
 
 
 def test_simultaneous_signs_produce_exactly_one_signature(tmp_path):
-    with TestClient(create_app(tmp_path)) as client:
+    with StaffClient(create_app(tmp_path)) as client:
         item, token = sent_file(client)
         with ThreadPoolExecutor(max_workers=4) as pool:
             codes = list(pool.map(lambda _: sign(client, token).status_code, range(4)))
@@ -200,10 +201,10 @@ def test_deleting_an_unsigned_file_removes_its_events(client, tmp_path):
 
 
 def test_signed_file_survives_restart(tmp_path):
-    with TestClient(create_app(tmp_path)) as first:
+    with StaffClient(create_app(tmp_path)) as first:
         item, token = sent_file(first)
         sign(first, token)
-    with TestClient(create_app(tmp_path)) as restarted:
+    with StaffClient(create_app(tmp_path)) as restarted:
         assert restarted.get("/api/signing", headers=auth(token)).json()["status"] == "signed"
         assert events(restarted, item["id"]) == ["created", "sent", "signed"]
         assert (tmp_path / "signatures" / f"{item['id']}.png").is_file()

@@ -18,7 +18,7 @@ vi.mock('./SignaturePad', () => ({
     <button onClick={() => onChange(null)}>Clear {label ?? 'signature'}</button>
   </div>,
 }));
-vi.mock('./App', () => ({ default: () => <div>Staff workspace</div> }));
+vi.mock('./StaffGate', () => ({ default: () => <div>Staff workspace</div> }));
 
 const token = 'Abc_def-1234567890Abc_def-1234567890Abc_def';
 const consent = 'I agree to sign this agreement electronically.';
@@ -131,7 +131,8 @@ it('routes signing links to the signing page and everything else to the staff wo
   expect(screen.queryByText('Staff workspace')).not.toBeInTheDocument();
   signing.unmount();
   render(<Root path="/" hash="" />);
-  expect(screen.getByText('Staff workspace')).toBeInTheDocument();
+  expect(await screen.findByText('Staff workspace')).toBeInTheDocument();
+  expect(calls.some(call => call.url.startsWith('/api/auth'))).toBe(false);  // the signing page never checks a login
 });
 
 async function signNow() {
