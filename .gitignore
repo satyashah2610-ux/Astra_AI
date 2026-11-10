@@ -13,3 +13,7 @@ frontend/playwright-report/
 tmp/
 .env
 *.log
+.env.local
+.env.*.local
+.neon
+node_modules/
