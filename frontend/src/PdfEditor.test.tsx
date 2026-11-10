@@ -55,7 +55,7 @@ it('a newly added box is focused, so arrow keys move it without clicking it firs
 it('the selected-field panel shows the field type and page, not raw percentages', async () => {
   render(<Harness initial={[box]} />);
   fireEvent.focus(await screen.findByTestId('signature-field'));
-  expect(screen.getByText('SELECTED FIELD')).toBeInTheDocument();
+  expect(screen.getByText('Selected field')).toBeInTheDocument();
   expect(screen.getByText('Field type')).toBeInTheDocument();
   expect(screen.getByText('Page')).toBeInTheDocument();
   expect(screen.queryByText('Width')).not.toBeInTheDocument();

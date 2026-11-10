@@ -24,7 +24,10 @@ beforeEach(() => {
     requests.push({ method, url, body });
     const json = (value: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(value), { status });
     if (url === '/api/auth/me') return session ? json(account) : json({ detail: 'Log in to continue.' }, 401);
+    if (url === '/api/auth/resend-confirmation') return json({ message: 'If that account still needs confirming, we’ve sent a new link.' }, 202);
     if (url === '/api/auth/login') {
+      if (body.email === 'new@riverside.example') return json({ detail: 'Confirm your email address first: use the link we sent you, or send a new one.' }, 403);
+      if (body.email === 'locked@riverside.example') return json({ detail: 'Too many failed attempts. Wait 15 minutes, or reset your password.' }, 429);
       if (body.password !== 'correct horse battery') return json({ detail: 'Email or password is incorrect.' }, 401);
       session = true; return json(account);
     }
@@ -214,4 +217,27 @@ it('after the account is deleted, the login page says so', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Account deleted' }));
   expect(await screen.findByRole('heading', { name: 'Log in to Astra Sign' })).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Your account has been deleted.');
+});
+
+it('an unconfirmed account can ask for a new confirmation link', async () => {
+  const onSignedIn = vi.fn();
+  render(<LoginPage onSignedIn={onSignedIn} />);
+  await userEvent.type(field('Work email'), 'new@riverside.example');
+  await userEvent.type(field('Password'), 'correct horse battery');
+  await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Confirm your email address first');
+  await userEvent.click(screen.getByRole('button', { name: 'Send a new confirmation link' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('If that account still needs confirming, we’ve sent a new link.');
+  expect(requests.at(-1)).toEqual({ method: 'POST', url: '/api/auth/resend-confirmation', body: { email: 'new@riverside.example' } });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(onSignedIn).not.toHaveBeenCalled();
+});
+
+it('shows the lock message after too many failed attempts, with no resend button', async () => {
+  render(<LoginPage onSignedIn={vi.fn()} />);
+  await userEvent.type(field('Work email'), 'locked@riverside.example');
+  await userEvent.type(field('Password'), 'correct horse battery');
+  await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Too many failed attempts. Wait 15 minutes, or reset your password.');
+  expect(screen.queryByRole('button', { name: 'Send a new confirmation link' })).not.toBeInTheDocument();
 });

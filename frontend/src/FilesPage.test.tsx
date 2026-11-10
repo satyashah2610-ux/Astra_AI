@@ -136,7 +136,7 @@ it('saves a draft, edits it with the version check, then sends it', async () => 
   await userEvent.clear(field('Signer name'));
   await userEvent.type(field('Signer name'), 'Alex Smith');
   await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
-  expect(await screen.findByText('Alex Smith')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText('Alex Smith')).toHaveLength(2));  // the list row and the file's details
   expect(requests.find(r => r.method === 'PATCH')!.body).toEqual({ version: 0, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Alex Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: '' });
   await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);
@@ -361,4 +361,13 @@ it('explains when the daily email limit is reached, so staff copy the link', asy
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
   expect(await screen.findByText(/daily email limit/i)).toHaveTextContent('send this link to Jordan Smith yourself');
+});
+
+it('file rows show the client and the signer, and the name once when they are the same', async () => {
+  files = [makeFile({ title: 'Kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith' }), makeFile({ title: 'Garage', client_name: 'Jo Lee', signer_name: 'Jo Lee' })];
+  render(<FilesPage agreements={[mind]} />);
+  const kitchen = await screen.findByRole('button', { name: /^Kitchen/ });
+  expect(within(kitchen).getByText('Smith Family')).toBeInTheDocument();
+  expect(within(kitchen).getByText('Jordan Smith')).toBeInTheDocument();
+  expect(within(screen.getByRole('button', { name: /^Garage/ })).getAllByText('Jo Lee')).toHaveLength(1);
 });

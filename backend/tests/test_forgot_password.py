@@ -21,6 +21,8 @@ class FakeSender:
         self.sent, self.fail = [], False
 
     def send(self, email):
+        if email.subject == "Confirm your email for Astra Sign":
+            return  # sign-up confirmations are tested in test_login_protection; here only this file's emails count
         if self.fail:
             raise EmailError("provider down")
         self.sent.append(email)

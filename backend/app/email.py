@@ -133,3 +133,18 @@ def signing_email(to: str, signer_name: str, sender_name: str, sender_email: str
     # Header values: whitespace (including CR/LF) collapsed so nothing can add a header line.
     return Email(to=to, subject=" ".join(f"{sender_name} sent you {document_name} to sign".split()), html=html, text=text,
                  reply_to=sender_email, from_name=f"{sender_name} via Astra Sign")
+
+
+def confirmation_email(to: str, name: str, link: str) -> Email:
+    greeting = name.strip() or "there"
+    html = _layout("Confirm your email",
+                   [f"Hi {escape(greeting)},", "Welcome to Astra Sign. Confirm this is your email address to finish creating your account. "
+                    "The link works once and expires in 24 hours."],
+                   "Confirm my email", link,
+                   "If you didn't create an Astra Sign account, you can ignore this email.")
+    text = (f"Hi {greeting},\n\n"
+            "Welcome to Astra Sign. Confirm this is your email address to finish creating your account\n"
+            f"(works once, expires in 24 hours):\n{link}\n\n"
+            "If you didn't create an Astra Sign account, you can ignore this email.\n")
+    return Email(to=to, subject="Confirm your email for Astra Sign", html=html, text=text)
+

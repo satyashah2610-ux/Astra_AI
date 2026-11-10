@@ -14,11 +14,11 @@ import psycopg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 
 from .database import utc_now, write_lock
-from .email import EmailError, reset_email
+from .email import EmailError, confirmation_email, reset_email
 from .events import request_origin
 from .links import app_url, secure_cookies
 from .signed_documents import remove_signed_pdf
-from .models import DeleteAccountBody, ForgotBody, LoginBody, ResetBody, SignupBody
+from .models import ConfirmBody, DeleteAccountBody, ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
 logger = logging.getLogger("astrasign.auth")
@@ -31,10 +31,23 @@ WRONG_LOGIN = "Email or password is incorrect."
 RESET_SENT = "If an account exists for that email, we’ve sent a link to reset the password."
 RESET_INVALID = "This reset link is invalid or has expired. Request a new one."
 ACCOUNT_CREATED = "Account created. Log in to continue."
+CHECK_EMAIL = "Account created. Check your email for a link to confirm your address, then log in."
+NOT_CONFIRMED = "Confirm your email address first: use the link we sent you, or send a new one."
+EMAIL_CONFIRMED = "Email confirmed. Log in to continue."
+CONFIRM_INVALID = "This confirmation link is invalid or has expired. Log in to send a new one."
+CONFIRM_SENT = "If that account still needs confirming, we’ve sent a new link."
+LOCKED = "Too many failed attempts. Wait 15 minutes, or reset your password."
+NETWORK_LOCKED = "Too many failed attempts from this network. Wait 15 minutes and try again."
+WRONG_PASSWORD = "That password doesn’t match this account."
 PASSWORD_RESET = "Your password has been reset. Log in with your new password."
 RESET_MINUTES = 60
 RESETS_PER_EMAIL_PER_HOUR = 3
 RESETS_PER_IP_PER_HOUR = 10
+CONFIRM_HOURS = 24
+CONFIRMATIONS_PER_HOUR = 3  # links per account, the sign-up one included
+FAILURE_MINUTES = 15  # failed logins are counted over this window
+FAILURES_PER_EMAIL = 5
+FAILURES_PER_IP = 20
 
 
 # --- passwords --------------------------------------------------------------------------------------
@@ -121,28 +134,65 @@ def create_auth(storage: Storage, email_sender=None):
                 set_session_cookie(request, response, token)  # the browser's cookie must slide with the server's expiry
         return dict(row)
 
+    def issue_confirmation(db, user_id: str, email: str, name: str, base_url: str, background: BackgroundTasks) -> None:
+        token, now = new_session_token(), utc_now()
+        expires = (datetime.now(timezone.utc) + timedelta(hours=CONFIRM_HOURS)).isoformat()
+        db.execute("INSERT INTO email_confirmations (token_hash, user_id, created_at, expires_at) VALUES (%s, %s, %s, %s)",
+                   (hash_session_token(token), user_id, now, expires))
+        background.add_task(deliver, confirmation_email(email, name, f"{base_url}/confirm-email#{token}"))
+
     @router.post("/signup", status_code=201)
-    def signup(body: SignupBody):
+    def signup(body: SignupBody, request: Request, background: BackgroundTasks):
         organization_id, user_id, now = str(uuid4()), str(uuid4()), utc_now()
+        base_url = app_url(request)  # before any change: a refused host can't leave an account whose link was never sent
         password_hash = hash_password(body.password)
+        must_confirm = email_sender is not None  # without email (local development) nobody could ever confirm
         try:
             with storage.database() as db:
                 db.execute("INSERT INTO organizations (id, name, created_at) VALUES (%s, %s, %s)", (organization_id, body.company, now))
-                db.execute("INSERT INTO users (id, organization_id, name, email, password_hash, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-                           (user_id, organization_id, body.name, body.email.lower(), password_hash, now))
+                db.execute("""INSERT INTO users (id, organization_id, name, email, password_hash, created_at, email_confirmed_at)
+                              VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                           (user_id, organization_id, body.name, body.email.lower(), password_hash, now, None if must_confirm else now))
+                if must_confirm:
+                    issue_confirmation(db, user_id, body.email.lower(), body.name, base_url, background)
         except psycopg.errors.UniqueViolation as exc:
             raise HTTPException(409, "An account with this email already exists. Log in instead.") from exc
-        logger.info("Account created organization=%s user=%s", organization_id, user_id)
-        return {"message": ACCOUNT_CREATED}  # no session: they log in next, which also confirms the password
+        logger.info("Account created organization=%s user=%s confirmed=%s", organization_id, user_id, not must_confirm)
+        return {"message": CHECK_EMAIL if must_confirm else ACCOUNT_CREATED}  # no session: they log in next
+
+    def begin_attempt(db, email: str, ip: str | None) -> None:
+        """Count this password attempt as a failure up front (under a per-email and per-address lock), so attempts
+        running in parallel can't all pass the limit before any is recorded. A correct password clears it again."""
+        window = (datetime.now(timezone.utc) - timedelta(minutes=FAILURE_MINUTES)).isoformat()
+        db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"login-email:{email}",))
+        if ip:
+            db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"login-ip:{ip}",))
+        db.execute("DELETE FROM login_failures WHERE email = %s AND at <= %s", (email, window))  # only the window counts
+        if db.execute("SELECT COUNT(*) FROM login_failures WHERE email = %s", (email,)).fetchone()[0] >= FAILURES_PER_EMAIL:
+            raise HTTPException(429, LOCKED)  # even the right password waits: no guessing on
+        if ip:
+            db.execute("DELETE FROM login_failures WHERE ip = %s AND at <= %s", (ip, window))
+            if db.execute("SELECT COUNT(*) FROM login_failures WHERE ip = %s", (ip,)).fetchone()[0] >= FAILURES_PER_IP:
+                raise HTTPException(429, NETWORK_LOCKED)  # a password reset wouldn't help with this one
+        db.execute("INSERT INTO login_failures (email, ip, at) VALUES (%s, %s, %s)", (email, ip, utc_now()))
+
+    def attempt_succeeded(db, email: str) -> None:
+        db.execute("DELETE FROM login_failures WHERE email = %s", (email,))  # the right password: earlier typos stop counting
 
     @router.post("/login")
     def login(body: LoginBody, request: Request, response: Response):
+        email, ip = body.email.lower(), request_origin(request)[0]
         with storage.database() as db:
-            user = db.execute("SELECT id, password_hash FROM users WHERE lower(email) = lower(%s)", (body.email,)).fetchone()
+            begin_attempt(db, email, ip)
+            user = db.execute("SELECT id, password_hash, email_confirmed_at FROM users WHERE lower(email) = %s", (email,)).fetchone()
         # scrypt runs with no pooled connection held, so slow guesses can't exhaust the pool.
         valid = verify_password(body.password, user["password_hash"] if user else _UNKNOWN_EMAIL_HASH)
-        if user is None or not valid:  # same work and same answer whether or not the email exists
+        if user is None or not valid:  # same work and same answer whether or not the email exists; the failure stays recorded
             raise HTTPException(401, WRONG_LOGIN)
+        with storage.database() as db:
+            attempt_succeeded(db, email)
+        if user["email_confirmed_at"] is None:  # only someone who knows the password learns this
+            raise HTTPException(403, NOT_CONFIRMED)
         with storage.database() as db:
             start_session(db, request, response, user["id"])
             account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user["id"],)).fetchone()
@@ -197,12 +247,12 @@ def create_auth(storage: Storage, email_sender=None):
     def deliver(email) -> None:
         """Runs after the response is sent, so a known email isn't slower to answer than an unknown one."""
         if email_sender is None:
-            logger.warning("Password reset requested but email is not configured (RESEND_API_KEY / ASTRA_EMAIL_FROM)")
+            logger.warning("An email was requested but email is not configured (RESEND_API_KEY / ASTRA_EMAIL_FROM)")
             return
         try:
             email_sender.send(email)
         except EmailError as exc:
-            logger.warning("Password reset email could not be sent: %s", exc)
+            logger.warning("Email could not be sent (%s): %s", email.subject, exc)
 
     @router.post("/forgot", status_code=202)
     def forgot(body: ForgotBody, request: Request, background: BackgroundTasks):
@@ -226,6 +276,46 @@ def create_auth(storage: Storage, email_sender=None):
                 logger.info("Password reset link issued user=%s", user["id"])
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
+    @router.post("/confirm")
+    def confirm_email(body: ConfirmBody, request: Request):
+        """Confirming needs the account's password too: someone who signed up with another person's address
+        can't get that person to confirm the account with one click."""
+        token_hash, ip = hash_session_token(body.token), request_origin(request)[0]
+        with storage.database() as db:
+            user = db.execute("""SELECT u.id, u.email, u.password_hash FROM email_confirmations c JOIN users u ON u.id = c.user_id
+                                 WHERE c.token_hash = %s AND c.used_at IS NULL AND c.expires_at > %s""",
+                              (token_hash, utc_now())).fetchone()
+            if user is None:
+                raise HTTPException(400, CONFIRM_INVALID)
+            begin_attempt(db, user["email"], ip)  # wrong passwords here count toward the same lock as logins
+        if not verify_password(body.password, user["password_hash"]):
+            raise HTTPException(401, WRONG_PASSWORD)
+        now = utc_now()
+        with storage.database() as db:
+            attempt_succeeded(db, user["email"])
+            used = db.execute("""UPDATE email_confirmations SET used_at = %s
+                                 WHERE token_hash = %s AND used_at IS NULL AND expires_at > %s RETURNING user_id""",
+                              (now, token_hash, now)).fetchone()  # atomic: a link works once
+            if used is None:
+                raise HTTPException(400, CONFIRM_INVALID)
+            db.execute("UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, %s) WHERE id = %s", (now, used["user_id"]))
+        logger.info("Email confirmed user=%s", used["user_id"])
+        return {"message": EMAIL_CONFIRMED}
+
+    @router.post("/resend-confirmation", status_code=202)
+    def resend_confirmation(body: ForgotBody, request: Request, background: BackgroundTasks):
+        base_url = app_url(request)  # before any lookup: a bad host fails the same way for every email
+        hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        with storage.database() as db:
+            user = db.execute("SELECT id, name, email FROM users WHERE lower(email) = %s AND email_confirmed_at IS NULL",
+                              (body.email.lower(),)).fetchone()
+            if user and email_sender is not None:
+                recent = db.execute("SELECT COUNT(*) FROM email_confirmations WHERE user_id = %s AND created_at > %s",
+                                    (user["id"], hour_ago)).fetchone()[0]
+                if recent < CONFIRMATIONS_PER_HOUR:
+                    issue_confirmation(db, user["id"], user["email"], user["name"], base_url, background)
+        return {"message": CONFIRM_SENT}  # identical for every email, sent or not
+
     @router.post("/reset")
     def reset(body: ResetBody):
         password_hash = hash_password(body.password)  # hashed before taking a connection
@@ -237,7 +327,9 @@ def create_auth(storage: Storage, email_sender=None):
             if used is None:
                 raise HTTPException(400, RESET_INVALID)
             user_id = used["user_id"]
-            db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+            email = db.execute("""UPDATE users SET password_hash = %s, email_confirmed_at = COALESCE(email_confirmed_at, %s)
+                                  WHERE id = %s RETURNING email""", (password_hash, now, user_id)).fetchone()["email"]
+            db.execute("DELETE FROM login_failures WHERE email = %s", (email,))  # the link proved ownership: unlock
             db.execute("UPDATE password_resets SET used_at = %s WHERE user_id = %s AND used_at IS NULL", (now, user_id))
             db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # signed out everywhere
         logger.info("Password reset completed user=%s", user_id)
