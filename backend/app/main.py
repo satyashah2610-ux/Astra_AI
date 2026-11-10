@@ -57,6 +57,7 @@ def validate_pdf(content: bytes) -> int:
 def create_app(data_dir: Path | None = None, database_url: str | None = None, email_sender=None) -> FastAPI:
     load_env_files()  # local development: .env.local / .env fill in missing settings, never override real ones
     trusted_proxies()  # a mistyped value stops the app here instead of quietly trusting no proxy
+    pages = frontend_dir()  # checked before connecting to the database
     url = database_url or os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is not set. Put your PostgreSQL connection string in .env.local "
@@ -209,4 +210,45 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
     def sample():
         return Response(make_sample(), media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="Sample services agreement.pdf"'})
 
+    if pages is not None:
+        serve_pages(app, pages)
     return app
+
+
+def frontend_dir() -> Path | None:
+    """ASTRA_FRONTEND_DIR: the built web pages (`frontend/dist`), served by this app when hosted. Unset in local
+    development, where Vite serves them. A folder without index.html is a broken build: the app refuses to start."""
+    value = os.environ.get("ASTRA_FRONTEND_DIR", "").strip()
+    if not value:
+        return None
+    folder = Path(value).resolve()
+    if not (folder / "index.html").is_file():
+        raise RuntimeError(f"ASTRA_FRONTEND_DIR ({folder}) has no index.html: build the frontend first (npm run build).")
+    return folder
+
+
+# Script types must be exact (the nosniff header makes browsers refuse anything else); some systems map .js to text/plain.
+SCRIPT_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm"}
+FILE_FOLDERS = {"assets": "public, max-age=31536000, immutable",  # Vite puts the content hash in these names
+                "pdf-assets": "public, max-age=86400"}  # the PDF viewer's fonts and maps: fixed names
+
+
+def serve_pages(app: FastAPI, folder: Path) -> None:
+    """Registered after every API route. Built files are served as they are, cached; any other address gets the app's
+    page (never cached), which shows the right screen (/sign, /reset-password, ...). A missing file under the build's
+    file folders is a 404, so a script never receives HTML; /api addresses stay JSON 404s; nothing outside the folder
+    is ever served."""
+    index = folder / "index.html"
+
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    def page(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, "Not found.")
+        target = (folder / path).resolve()
+        top = path.split("/", 1)[0]
+        if path and target.is_relative_to(folder) and target.is_file():
+            return FileResponse(target, media_type=SCRIPT_TYPES.get(target.suffix),
+                                headers={"Cache-Control": FILE_FOLDERS.get(top, "no-store")})
+        if top in FILE_FOLDERS:
+            raise HTTPException(404, "Not found.")
+        return FileResponse(index, media_type="text/html")
