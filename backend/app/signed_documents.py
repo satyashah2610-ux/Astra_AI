@@ -38,6 +38,15 @@ _build_locks: dict[str, threading.Lock] = {}  # one build per file at a time, so
 # concurrent downloads can't produce two versions, while other files' builds are not held up
 
 
+def remove_signed_pdf(storage: Storage, file_id: str) -> None:
+    """Delete a file's signed PDF and any unfinished build of it. Takes the build lock, so a build already
+    running finishes first and its PDF is removed too (a build starting later finds the file deleted: 404)."""
+    with _build_locks.setdefault(file_id, threading.Lock()):
+        storage.signed_pdf(file_id).unlink(missing_ok=True)
+        for partial in storage.signed.glob(f"{file_id}.*.partial"):
+            partial.unlink(missing_ok=True)
+
+
 def ensure_signed_pdf(storage: Storage, file_id: str) -> Path:
     """Path of the file's signed PDF, building it on first use. 404 if not signed; 503 if it can't be built."""
     target = storage.signed_pdf(file_id)

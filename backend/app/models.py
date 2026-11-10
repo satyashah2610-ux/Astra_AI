@@ -197,6 +197,21 @@ class ResetBody(BaseModel):
     password: Password
 
 
+DELETE_ACCOUNT_PHRASE = "I want to delete account"
+
+
+class DeleteAccountBody(BaseModel):
+    """Deleting the account needs exactly this phrase: same capitals, no extra spaces."""
+    model_config = ConfigDict(extra="forbid")
+    confirm: Annotated[str, StringConstraints(max_length=100)]
+
+    @model_validator(mode="after")
+    def phrase_matches(self):
+        if self.confirm != DELETE_ACCOUNT_PHRASE:
+            raise ValueError(f'Type "{DELETE_ACCOUNT_PHRASE}" to confirm.')
+        return self
+
+
 class LoginBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     email: Email

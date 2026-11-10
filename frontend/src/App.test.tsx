@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 
 it('shows exactly the two requested navigation tabs and a useful empty state', async () => {
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   expect(screen.getAllByRole('tab')).toHaveLength(2);
   expect(await screen.findByText('Your first agreement starts here')).toBeInTheDocument();
   expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Agreements', 'Files']);
@@ -54,7 +54,7 @@ it('shows exactly the two requested navigation tabs and a useful empty state', a
 });
 
 it('uploads a PDF, edits marks, saves them, and restores them on remount', async () => {
-  const view = render(<App account={account} onLogout={onLogout} />);
+  const view = render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Your first agreement starts here');
   fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['%PDF'], 'Consulting agreement.pdf', { type: 'application/pdf' })] } });
   await screen.findByRole('heading', { name: 'Consulting agreement' });
@@ -64,7 +64,7 @@ it('uploads a PDF, edits marks, saves them, and restores them on remount', async
   await screen.findByText('All changes saved');
   expect(records[0].marks).toHaveLength(1);
   view.unmount();
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByRole('heading', { name: 'Consulting agreement' });
   expect(screen.getByText('1 signature field')).toBeInTheDocument();
 });
@@ -72,7 +72,7 @@ it('uploads a PDF, edits marks, saves them, and restores them on remount', async
 it('keeps local changes and displays the error when a save fails', async () => {
   records = [{ ...agreement }];
   failSave = true;
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Draw test field');
   await userEvent.click(screen.getByText('Draw test field'));
   await userEvent.click(screen.getByRole('button', { name: 'Save template' }));
@@ -83,7 +83,7 @@ it('keeps local changes and displays the error when a save fails', async () => {
 
 it('asks before switching tabs when there are unsaved changes', async () => {
   records = [{ ...agreement }];
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Draw test field');
   await userEvent.click(screen.getByText('Draw test field'));
   await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
@@ -93,7 +93,7 @@ it('asks before switching tabs when there are unsaved changes', async () => {
 });
 
 it('rejects non-PDF uploads before sending them', async () => {
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Your first agreement starts here');
   fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] } });
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('PDF'));
@@ -102,7 +102,7 @@ it('rejects non-PDF uploads before sending them', async () => {
 
 it('confirms deletion, preserves unsaved work on cancel, and clears the last agreement', async () => {
   records = [{ ...agreement }];
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Draw test field');
   expect(screen.getByRole('link', { name: /Astra Sign/ })).toBeInTheDocument();
   await userEvent.click(screen.getByText('Draw test field'));
@@ -120,7 +120,7 @@ it('confirms deletion, preserves unsaved work on cancel, and clears the last agr
 
 it('opens the next agreement after deleting the selected agreement', async () => {
   records = [{ ...agreement }, { ...agreement, id: 'keep', name: 'Keep this agreement' }];
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Draw test field');
   await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
   await userEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
@@ -130,7 +130,7 @@ it('opens the next agreement after deleting the selected agreement', async () =>
 
 it('preserves the agreement and edits when deletion fails, and allows retry', async () => {
   records = [{ ...agreement }]; failDelete = true;
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByText('Draw test field');
   await userEvent.click(screen.getByText('Draw test field'));
   await userEvent.click(screen.getByRole('button', { name: 'Delete agreement' }));
@@ -145,7 +145,7 @@ it('preserves the agreement and edits when deletion fails, and allows retry', as
 
 it('keeps the once-only signing link when staff switch to Agreements and back', async () => {
   records = [{ ...agreement, marks: [{ id: 'm1', page: 1, x: .1, y: .6, width: .3, height: .1 }] }];
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByRole('heading', { name: 'Consulting agreement' });
   await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
   await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
@@ -163,17 +163,20 @@ it('keeps the once-only signing link when staff switch to Agreements and back', 
 it('counts only signature boxes as signature fields', async () => {
   records = [{ ...agreement, marks: [{ id: 's', page: 1, x: .1, y: .6, width: .3, height: .1 }, { id: 't', page: 1, x: .1, y: .1, width: .3, height: .03, type: 'text', text: 'Fee' }, { id: 'c', page: 1, x: .5, y: .1, width: .3, height: .05, type: 'comment', text: 'Tick' }] },
              { ...agreement, id: 'notes', name: 'Notes only', marks: [{ id: 'c', page: 1, x: .5, y: .1, width: .3, height: .05, type: 'comment', text: 'Tick' }] }];
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   await screen.findByRole('heading', { name: 'Consulting agreement' });
   expect(screen.getByText('1 signature field')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Notes only/ })).toHaveTextContent('Draft');
 });
 
 it('shows who is signed in and logs out from the header', async () => {
-  render(<App account={account} onLogout={onLogout} />);
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
   expect(await screen.findByText('Riverside Builders')).toBeInTheDocument();
   expect(screen.getByText('Ana Lopez')).toBeInTheDocument();
-  expect(screen.getByLabelText('Signed in as Ana Lopez')).toHaveTextContent('AL');
-  await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+  const avatar = screen.getByRole('button', { name: /signed in as Ana Lopez/i });
+  expect(avatar).toHaveTextContent('AL');
+  expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument();  // no separate arrow button
+  await userEvent.click(avatar);
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Log out' }));
   expect(onLogout).toHaveBeenCalled();
 });

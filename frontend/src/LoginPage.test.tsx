@@ -5,9 +5,10 @@ import LoginPage from './LoginPage';
 import StaffGate from './StaffGate';
 import { LOGGED_OUT_EVENT } from './api';
 
-vi.mock('./App', () => ({ default: ({ account, onLogout }: any) => <div>
+vi.mock('./App', () => ({ default: ({ account, onLogout, onAccountDeleted }: any) => <div>
   <p>Workspace of {account.organization.name}</p>
   <button onClick={onLogout}>Log out</button>
+  <button onClick={onAccountDeleted}>Account deleted</button>
 </div> }));
 
 const account = { user: { id: 'u1', name: 'Ana Lopez', email: 'ana@riverside.example' }, organization: { id: 'o1', name: 'Riverside Builders' } };
@@ -205,4 +206,12 @@ it('after sign-up, a failed login replaces the "Account created" note, and a sho
   await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
   expect(screen.queryByRole('status')).not.toBeInTheDocument();  // never both messages at once
+});
+
+it('after the account is deleted, the login page says so', async () => {
+  session = true;
+  render(<StaffGate />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Account deleted' }));
+  expect(await screen.findByRole('heading', { name: 'Log in to Astra Sign' })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Your account has been deleted.');
 });

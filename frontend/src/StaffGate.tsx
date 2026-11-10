@@ -10,6 +10,7 @@ type State = Account | 'checking' | 'logged-out' | 'unreachable';
 /** The staff workspace, shown only to a logged-in user; everyone else gets the login page. */
 export default function StaffGate() {
   const [state, setState] = useState<State>('checking');
+  const [notice, setNotice] = useState('');  // shown on the login page, e.g. after deleting the account
   const loggedOut = useCallback(() => setState('logged-out'), []);
 
   const check = useCallback(() => {
@@ -33,6 +34,7 @@ export default function StaffGate() {
     <p className="auth-intro">The server isn’t answering right now. Your agreements and files are safe. Check your connection and try again.</p>
     <button className="primary auth-submit" onClick={check}><RotateCcw size={16} />Retry</button>
   </div></div>;
-  if (state === 'logged-out') return <LoginPage onSignedIn={setState} />;
-  return <App account={state} onLogout={() => { void authApi.logout().catch(() => undefined).finally(loggedOut); }} />;
+  if (state === 'logged-out') return <LoginPage notice={notice} onSignedIn={account => { setNotice(''); setState(account); }} />;
+  return <App account={state} onLogout={() => { void authApi.logout().catch(() => undefined).finally(loggedOut); }}
+    onAccountDeleted={() => { setNotice('Your account has been deleted.'); loggedOut(); }} />;
 }
