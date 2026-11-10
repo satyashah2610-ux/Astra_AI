@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect } from '@playwright/test';
-import { signUp } from './helpers';
+import { emailsTo, signUp } from './helpers';
 
 test('sending a file emails the signer a personal message and a link that opens the agreement', async ({ page, context }) => {
-  await signUp(page, 'Email Test Co');
+  const staff = await signUp(page, 'Email Test Co');
   // An agreement with one signature box, prepared through the API (the editor has its own tests).
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await page.request.post('/api/agreements', { multipart: { file: { name: 'Email agreement.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
@@ -26,6 +26,10 @@ test('sending a file emails the signer a personal message and a link that opens 
   await expect(page.getByText(/Emailing this link to Morgan Reed/)).toBeVisible();
   const shownLink = await page.getByLabel('Signing link').inputValue();
   await expect(page.getByRole('list', { name: 'Timeline' }).getByText('Email sent')).toBeVisible({ timeout: 10000 });
+  // Reminders are scheduled because the link was emailed (one a day until signed).
+  const reminders = page.locator('.file-facts > div').filter({ hasText: 'Reminders' });
+  await expect(reminders).toContainText('None sent yet');
+  await expect(reminders).toContainText('Next');
 
   // The email, as the test backend wrote it to its outbox instead of sending it.
   const outbox = process.env.ASTRA_E2E_OUTBOX!;
@@ -45,4 +49,17 @@ test('sending a file emails the signer a personal message and a link that opens 
   await client.goto(link);
   await expect(client.getByRole('heading', { name: 'Email agreement' })).toBeVisible();
   await expect(client.getByLabel('Full name')).toHaveValue('Morgan Reed');
+
+  // The client signs; the staff member who sent it gets an email, and the file shows it.
+  await client.getByLabel(/I agree to sign this agreement electronically/).check();
+  await client.getByRole('button', { name: 'Sign agreement' }).click();
+  await expect(client.getByRole('heading', { name: 'You’ve signed Email agreement' })).toBeVisible();
+  await expect.poll(() => emailsTo(staff.email).filter(message => message.subject === 'Morgan Reed signed Email agreement').length, { timeout: 10000 }).toBe(1);
+  const notice = emailsTo(staff.email).find(message => message.subject === 'Morgan Reed signed Email agreement')!;
+  expect(notice.text).toContain('Email job 001');
+  await page.bringToFront();
+  await page.getByRole('button', { name: 'Refresh' }).click();
+  await expect(page.getByTestId('file-status')).toHaveText('Signed');
+  await expect(page.getByRole('list', { name: 'Timeline' })).toContainText('Company notified');
+  await expect(reminders).toHaveCount(0);  // signed before any reminder: nothing more to show
 });

@@ -43,7 +43,8 @@ describe('sendable and labels', () => {
   });
   it('labels every status and event', () => {
     expect(STATUS_LABELS).toEqual({ draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' });
-    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed', 'email_sent', 'email_failed']);
+    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed', 'email_sent', 'email_failed',
+      'reminder_sent', 'reminder_failed', 'signed_notice_sent', 'signed_notice_failed']);
     expect(EVENT_LABELS.email_sent).toBe('Email sent');
     expect(EVENT_LABELS.email_failed).toBe('Email not delivered');
   });

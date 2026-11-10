@@ -135,6 +135,41 @@ def signing_email(to: str, signer_name: str, sender_name: str, sender_email: str
                  reply_to=sender_email, from_name=f"{sender_name} via Astra Sign")
 
 
+def reminder_email(to: str, signer_name: str, sender_name: str, sender_email: str, company: str, document_name: str,
+                   link: str) -> Email:
+    """A daily nudge until the client signs. Same sender and reply-to as the first email; the link is a fresh one."""
+    html = _layout(f"{escape(document_name)} is waiting for your signature",
+                   [f"Hi {escape(signer_name)},",
+                    f"A reminder: {escape(sender_name)} at {escape(company)} sent you <strong>{escape(document_name)}</strong> "
+                    "to review and sign, and it isn't signed yet."],
+                   "Review and sign", link,
+                   "No account is needed: the link opens the document in your browser. "
+                   f"Questions? Reply to this email to reach {escape(sender_name)}.")
+    text = (f"Hi {signer_name},\n\n"
+            f"A reminder: {sender_name} at {company} sent you {document_name} to review and sign, and it isn't signed yet.\n\n"
+            f"Review and sign here:\n{link}\n\n"
+            "No account is needed: the link opens the document in your browser.\n"
+            f"Questions? Reply to this email to reach {sender_name}.\n")
+    return Email(to=to, subject=" ".join(f"Reminder: {sender_name} sent you {document_name} to sign".split()), html=html, text=text,
+                 reply_to=sender_email, from_name=f"{sender_name} via Astra Sign")
+
+
+def signed_notice_email(to: str, staff_name: str, signer_name: str, document_name: str, file_title: str, link: str) -> Email:
+    """Tells the staff member who sent the file that the client signed: work can start."""
+    greeting = staff_name.strip() or "there"
+    html = _layout(f"{escape(signer_name)} signed {escape(document_name)}",
+                   [f"Hi {escape(greeting)},",
+                    f"{escape(signer_name)} signed <strong>{escape(document_name)}</strong> for the file "
+                    f"<strong>{escape(file_title)}</strong>. The signed PDF, with its audit certificate, is ready in Astra Sign."],
+                   "Open Astra Sign", link,
+                   "You get this email because you sent this file for signature.")
+    text = (f"Hi {greeting},\n\n"
+            f"{signer_name} signed {document_name} for the file {file_title}.\n"
+            f"The signed PDF, with its audit certificate, is ready in Astra Sign:\n{link}\n\n"
+            "You get this email because you sent this file for signature.\n")
+    return Email(to=to, subject=" ".join(f"{signer_name} signed {document_name}".split()), html=html, text=text)
+
+
 def confirmation_email(to: str, name: str, link: str) -> Email:
     greeting = name.strip() or "there"
     html = _layout("Confirm your email",

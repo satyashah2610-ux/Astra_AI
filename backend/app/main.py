@@ -1,11 +1,13 @@
+import asyncio
 import json
 import logging
 import os
+import threading
 from io import BytesIO
 from pathlib import Path, PureWindowsPath
 from uuid import uuid4
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import psycopg
 
@@ -15,6 +17,7 @@ from pypdf import PdfReader
 from .auth import create_auth
 from .database import write_lock
 from .email import sender_from_env
+from .events import trusted_proxies
 from .models import SaveMarks
 from .files import create_files_router
 from .lifecycle import FileStatus
@@ -22,6 +25,7 @@ from .naming import unique_name
 from .sample import make_sample
 from .security import SecurityMiddleware, parse_allowed_hosts
 from .settings import load_env_files
+from .reminders import reminder_loop
 from .signing import create_signing_router
 from .storage import Storage, utc_now
 
@@ -52,6 +56,7 @@ def validate_pdf(content: bytes) -> int:
 
 def create_app(data_dir: Path | None = None, database_url: str | None = None, email_sender=None) -> FastAPI:
     load_env_files()  # local development: .env.local / .env fill in missing settings, never override real ones
+    trusted_proxies()  # a mistyped value stops the app here instead of quietly trusting no proxy
     url = database_url or os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is not set. Put your PostgreSQL connection string in .env.local "
@@ -61,7 +66,14 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
 
     @asynccontextmanager
     async def lifespan(_app):
+        stop = threading.Event()
+        reminders = asyncio.create_task(reminder_loop(storage, sender, stop)) if sender is not None else None
         yield
+        stop.set()
+        if reminders is not None:
+            reminders.cancel()
+            with suppress(asyncio.CancelledError):
+                await reminders
         storage.close()  # release database connections at shutdown
     database = storage.database
 
@@ -86,6 +98,7 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
     Staff = Depends(current_user)  # every staff endpoint needs a logged-in user; signing endpoints don't
 
     app = FastAPI(title="Astra Sign", version="0.1.0", lifespan=lifespan)
+    app.state.storage = storage
     app.add_middleware(SecurityMiddleware,
                        allowed_hosts=parse_allowed_hosts(os.environ.get("ASTRA_ALLOWED_HOSTS")),
                        body_limit=MAX_BYTES + 1024 * 1024,  # the PDF plus multipart overhead
@@ -190,7 +203,7 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
 
     app.include_router(auth_router)
     app.include_router(create_files_router(storage, current_user, sender))
-    app.include_router(create_signing_router(storage))
+    app.include_router(create_signing_router(storage, sender))
 
     @app.get("/api/sample-agreement.pdf")
     def sample():

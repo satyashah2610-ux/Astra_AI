@@ -8,13 +8,15 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from .database import write_lock
 from .events import record_event, request_origin
 from .lifecycle import FileStatus, can_transition
+from .links import app_url
 from .models import SignSubmission
+from .reminders import notify_signed
 from .signatures import SignatureImageError, decode_signature_png
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .signed_pdf import mark_type
@@ -49,12 +51,15 @@ def signer_view(row) -> dict:
     }
 
 
-def create_signing_router(storage: Storage) -> APIRouter:
+def create_signing_router(storage: Storage, email_sender=None) -> APIRouter:
     router = APIRouter(prefix="/api/signing", tags=["signing"])
 
     def lookup(db, token: str | None):
-        """Resolve a link secret to its sent file. One generic 404 for every failure."""
-        row = db.execute("SELECT * FROM files WHERE token_hash = %s", (hash_token(token),)).fetchone() if token else None
+        """Resolve a link secret (the sent link, or one from a reminder) to its sent file. One generic 404 for every failure."""
+        token_hash = hash_token(token) if token else None
+        row = db.execute("""SELECT * FROM files WHERE token_hash = %s
+                            OR id = (SELECT file_id FROM signing_links WHERE token_hash = %s)""",
+                         (token_hash, token_hash)).fetchone() if token else None
         if row is None or row["status"] == FileStatus.DRAFT:
             raise HTTPException(404, INVALID_LINK)
         return row
@@ -91,7 +96,7 @@ def create_signing_router(storage: Storage) -> APIRouter:
                             content_disposition_type="inline")
 
     @router.post("/sign")
-    def sign(body: SignSubmission, request: Request, x_signing_token: str | None = Header(default=None)):
+    def sign(body: SignSubmission, request: Request, background: BackgroundTasks, x_signing_token: str | None = Header(default=None)):
         try:
             image = decode_signature_png(body.image)
             initials = decode_signature_png(body.initials.image) if body.initials else None
@@ -122,7 +127,7 @@ def create_signing_router(storage: Storage) -> APIRouter:
                             body.initials.method if body.initials else None,
                             hashlib.sha256(initials).hexdigest() if initials is not None else None,
                             signing_date(body.utc_offset_minutes)))
-                db.execute("""UPDATE files SET status = %s, signed_at = %s, updated_at = %s, version = version + 1
+                db.execute("""UPDATE files SET status = %s, signed_at = %s, updated_at = %s, version = version + 1, remind_at = NULL
                               WHERE id = %s AND status IN (%s, %s)""",
                            (FileStatus.SIGNED, now, now, row["id"], FileStatus.SENT, FileStatus.VIEWED))
                 record_event(db, row["id"], "signed", request, now)
@@ -137,6 +142,13 @@ def create_signing_router(storage: Storage) -> APIRouter:
             ensure_signed_pdf(storage, row["id"])  # build now; a failure is retried on the first download
         except Exception:
             logger.warning("Signed PDF build deferred id=%s", row["id"], exc_info=True)
+        if email_sender is not None:  # after the response: the signer never waits on our email provider
+            try:
+                base_url = row["link_base"] or app_url(request)  # files sent before reminders existed have no stored address
+            except HTTPException:  # never turn a completed signature into an error
+                logger.warning("Signed notice skipped: no app address id=%s", row["id"])
+            else:
+                background.add_task(notify_signed, storage, email_sender, row["id"], base_url)
         return signed
 
     @router.get("/signed.pdf")

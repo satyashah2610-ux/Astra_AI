@@ -120,7 +120,8 @@ export default function SigningPage({ token }: { token: string }) {
         <label className="form-field"><span>Full name</span><input value={name} onChange={e => setName(e.target.value)} maxLength={200} autoComplete="name" disabled={busy} /></label>
         <SignaturePad name={name} onChange={setSignature} />
         {needsInitials && <section className="initials-section" aria-label="Your initials"><span className="form-label">Your initials</span><SignaturePad name={initialsFrom(name)} onChange={setInitials} label="initials" /></section>}
-        <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} disabled={busy} /><span>{view.consent_text}</span></label>
+        <label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} disabled={busy} aria-describedby="recorded-note" /><span>{view.consent_text}</span></label>
+        <p className="recorded-note" id="recorded-note">Your IP address, browser and signing time are recorded as part of the signing record.</p>
         {(!textFilled || (needsInitials && !initials)) && <ul className="sign-todo">
           {!textFilled && <li>Type something in each text box, or remove it.</li>}
           {needsInitials && !initials && <li>Adopt your initials above.</li>}

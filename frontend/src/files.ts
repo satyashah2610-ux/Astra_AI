@@ -6,6 +6,7 @@ export type FileItem = {
   id: string; title: string; client_name: string; signer_name: string; signer_email: string; agreement_id: string; message: string | null; status: FileStatus;
   document_name: string | null; document_sha256: string | null; page_count: number | null; version: number;
   created_at: string; updated_at: string; sent_at: string | null; viewed_at: string | null; signed_at: string | null; field_count: number;
+  reminders_sent: number; next_reminder_at: string | null;
 };
 export type FileValues = Pick<FileItem, 'title' | 'client_name' | 'signer_name' | 'signer_email' | 'agreement_id'> & { message: string };
 export type FileEvent = { type: keyof typeof EVENT_LABELS; at: string; ip: string | null; user_agent: string | null; detail: string | null };
@@ -15,7 +16,8 @@ export type SentFile = { file: FileItem; signing_path: string; email: EmailResul
 export type FieldErrors = Partial<Record<keyof FileValues, string>>;
 
 export const STATUS_LABELS: Record<FileStatus, string> = { draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' };
-export const EVENT_LABELS = { created: 'Created', sent: 'Sent', link_reissued: 'Link reissued', viewed: 'Opened by signer', signed: 'Signed', email_sent: 'Email sent', email_failed: 'Email not delivered' } as const;
+export const EVENT_LABELS = { created: 'Created', sent: 'Sent', link_reissued: 'Link reissued', viewed: 'Opened by signer', signed: 'Signed', email_sent: 'Email sent', email_failed: 'Email not delivered',
+  reminder_sent: 'Reminder sent', reminder_failed: 'Reminder not delivered', signed_notice_sent: 'Company notified', signed_notice_failed: 'Company notice not delivered' } as const;
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const MAX_TEXT = 200;
