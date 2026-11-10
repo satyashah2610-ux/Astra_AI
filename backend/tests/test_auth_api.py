@@ -22,12 +22,20 @@ def signup(client, **overrides):
     return client.post("/api/auth/signup", json=body)
 
 
+def signed_up_and_in(client):
+    signup(client)
+    return client.post("/api/auth/login", json={"email": "ana@riverside.example", "password": PASSWORD})
+
+
 # --- sign-up ------------------------------------------------------------------------------------------
 
-def test_signup_creates_a_company_and_user_and_signs_them_in(anonymous):
+def test_signup_creates_a_company_and_user_who_then_logs_in(anonymous):
     response = signup(anonymous)
     assert response.status_code == 201
-    account = response.json()
+    assert response.json() == {"message": "Account created. Log in to continue."}
+    assert SESSION_COOKIE not in response.cookies and db.value("SELECT COUNT(*) FROM sessions") == 0
+    assert anonymous.get("/api/auth/me").status_code == 401  # not logged in until they log in
+    account = anonymous.post("/api/auth/login", json={"email": "ana@riverside.example", "password": PASSWORD}).json()
     assert account["user"]["name"] == "Ana Lopez" and account["user"]["email"] == "ana@riverside.example"
     assert account["organization"]["name"] == "Riverside Builders"
     assert "password" not in str(account).lower()
@@ -37,7 +45,7 @@ def test_signup_creates_a_company_and_user_and_signs_them_in(anonymous):
 
 
 def test_session_cookie_is_http_only_and_same_site(anonymous):
-    response = signup(anonymous)
+    response = signed_up_and_in(anonymous)
     cookie = response.headers["set-cookie"]
     assert cookie.startswith(f"{SESSION_COOKIE}=")
     assert "HttpOnly" in cookie and "samesite=lax" in cookie.lower() and "Path=/" in cookie
@@ -62,7 +70,6 @@ def test_invalid_signups_are_rejected(anonymous, changes):
 
 def test_login_with_the_right_password_in_any_email_case(anonymous):
     signup(anonymous)
-    anonymous.post("/api/auth/logout")
     response = anonymous.post("/api/auth/login", json={"email": "Ana@Riverside.example", "password": PASSWORD})
     assert response.status_code == 200
     assert response.json()["user"]["email"] == "ana@riverside.example"
@@ -72,7 +79,6 @@ def test_login_with_the_right_password_in_any_email_case(anonymous):
 @pytest.mark.parametrize("email,password", [("ana@riverside.example", "wrong password!!"), ("nobody@riverside.example", PASSWORD)])
 def test_wrong_email_or_password_get_the_same_answer(anonymous, email, password):
     signup(anonymous)
-    anonymous.post("/api/auth/logout")
     response = anonymous.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 401
     assert response.json()["detail"] == "Email or password is incorrect."
@@ -80,7 +86,7 @@ def test_wrong_email_or_password_get_the_same_answer(anonymous, email, password)
 
 
 def test_logout_ends_the_session_on_the_server(anonymous):
-    signup(anonymous)
+    signed_up_and_in(anonymous)
     token = anonymous.cookies[SESSION_COOKIE]
     assert anonymous.post("/api/auth/logout").status_code == 204
     assert db.value("SELECT COUNT(*) FROM sessions") == 0
@@ -89,7 +95,7 @@ def test_logout_ends_the_session_on_the_server(anonymous):
 
 
 def test_expired_sessions_are_refused(anonymous):
-    signup(anonymous)
+    signed_up_and_in(anonymous)
     db.execute("UPDATE sessions SET expires_at = %s", ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),))
     assert anonymous.get("/api/auth/me").status_code == 401
     assert anonymous.get("/api/agreements").status_code == 401
@@ -151,7 +157,7 @@ def test_sessions_survive_an_app_restart(tmp_path):
 # --- code review regressions ----------------------------------------------------------------------
 
 def test_an_extended_session_also_extends_the_browser_cookie(anonymous):
-    signup(anonymous)
+    signed_up_and_in(anonymous)
     db.execute("UPDATE sessions SET expires_at = %s", ((datetime.now(timezone.utc) + timedelta(days=10)).isoformat(),))
     response = anonymous.get("/api/auth/me")
     assert response.status_code == 200
@@ -161,7 +167,7 @@ def test_an_extended_session_also_extends_the_browser_cookie(anonymous):
 
 
 def test_a_fresh_session_is_not_rewritten_on_every_request(anonymous):
-    signup(anonymous)
+    signed_up_and_in(anonymous)
     assert "set-cookie" not in anonymous.get("/api/auth/me").headers
 
 
@@ -172,7 +178,7 @@ def test_login_and_signup_only_accept_small_requests(anonymous):
 
 
 def test_logging_in_clears_that_users_expired_sessions(anonymous):
-    signup(anonymous)
+    signed_up_and_in(anonymous)
     db.execute("UPDATE sessions SET expires_at = %s", ((datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),))
     assert anonymous.post("/api/auth/login", json={"email": "ana@riverside.example", "password": PASSWORD}).status_code == 200
     assert db.value("SELECT COUNT(*) FROM sessions") == 1  # only the new one

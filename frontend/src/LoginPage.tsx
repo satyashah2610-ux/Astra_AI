@@ -27,6 +27,7 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Accoun
     return 'forgot';
   });
   const [sent, setSent] = useState('');
+  const [created, setCreated] = useState('');  // "Account created": shown above the login form
   const [values, setValues] = useState<Values>({ company: '', name: '', email: '', password: '' });
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState('');
@@ -34,34 +35,38 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Accoun
   const [showPassword, setShowPassword] = useState(false);
 
   const set = (key: keyof Values, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
-  function switchTo(next: Mode) { setMode(next); setErrors({}); setError(''); setSent(''); }
+  function switchTo(next: Mode) { setMode(next); setErrors({}); setError(''); setSent(''); setCreated(''); setShowPassword(false); }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const found = check(values, mode);
-    setErrors(found); setError('');
+    setErrors(found); setError(''); setCreated('');
     if (Object.keys(found).length) return;
     setBusy(true);
     try {
       const email = values.email.trim();
       if (mode === 'forgot') { setSent((await authApi.forgot(email)).message); return; }
-      onSignedIn(mode === 'login'
-        ? await authApi.login(email, values.password)
-        : await authApi.signup({ company: values.company.trim(), name: values.name.trim(), email, password: values.password }));
+      if (mode === 'login') { onSignedIn(await authApi.login(email, values.password)); return; }
+      const { message } = await authApi.signup({ company: values.company.trim(), name: values.name.trim(), email, password: values.password });
+      switchTo('login');  // the new account logs in like any other, with the email already filled in
+      set('password', '');
+      setCreated(message);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Try again.');
       if (mode === 'login') set('password', '');
     } finally { setBusy(false); }
   }
 
+  // Directly in the column (no wrapper) so every box is full width, like the password row.
+  const input = (key: keyof Values, type: string, autoComplete: string) => <input id={`auth-${key}`} type={key === 'password' && showPassword ? 'text' : type} value={values[key]}
+    autoComplete={autoComplete} disabled={busy} maxLength={key === 'email' ? 254 : 200} aria-invalid={Boolean(errors[key])}
+    aria-describedby={errors[key] ? `auth-${key}-error` : undefined} onChange={e => set(key, e.target.value)} />;
   const field = (key: keyof Values, label: string, type = 'text', autoComplete = 'off') => <div className={`form-field ${errors[key] ? 'invalid' : ''}`}>
     <label htmlFor={`auth-${key}`}>{label}</label>
-    <div className={key === 'password' ? 'password-row' : undefined}>
-      <input id={`auth-${key}`} type={key === 'password' && showPassword ? 'text' : type} value={values[key]} autoComplete={autoComplete} disabled={busy}
-        maxLength={key === 'email' ? 254 : 200} aria-invalid={Boolean(errors[key])} aria-describedby={errors[key] ? `auth-${key}-error` : undefined}
-        onChange={e => set(key, e.target.value)} />
-      {key === 'password' && <button type="button" className="icon-button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>}
-    </div>
+    {key === 'password'
+      ? <div className="password-row">{input(key, type, autoComplete)}
+          <button type="button" className="icon-button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div>
+      : input(key, type, autoComplete)}
     {errors[key] && <small className="field-error" id={`auth-${key}-error`}>{errors[key]}</small>}
   </div>;
 
@@ -82,7 +87,8 @@ export default function LoginPage({ onSignedIn }: { onSignedIn: (account: Accoun
     <form className="auth-card" noValidate onSubmit={event => void submit(event)} aria-labelledby="auth-title">
       <span className="brand auth-brand"><span className="brand-icon"><Sparkles size={20} strokeWidth={1.6} /></span>Astra Sign</span>
       <h1 id="auth-title">{mode === 'login' ? 'Log in to Astra Sign' : 'Create your company account'}</h1>
-      <p className="auth-intro">{mode === 'login' ? 'Prepare agreements, send them to clients and keep every signed copy with its file.' : 'One account per company to start. Your clients never need an account: they sign from a secure link.'}</p>
+      {created && <p className="auth-intro sent-note" role="status">{created}</p>}
+      <p className="auth-intro">{mode === 'login' ? 'Prepare agreements, send them to clients and keep every signed copy with its file.' : 'Your clients never need an account: they sign from a secure link.'}</p>
       {mode === 'signup' && field('company', 'Company name', 'text', 'organization')}
       {mode === 'signup' && field('name', 'Your name', 'text', 'name')}
       {field('email', 'Work email', 'email', 'email')}

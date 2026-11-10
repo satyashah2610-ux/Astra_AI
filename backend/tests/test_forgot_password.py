@@ -130,7 +130,7 @@ def test_old_requests_no_longer_count(client, outbox):
 
 # --- using a link ------------------------------------------------------------------------------------
 
-def test_reset_sets_the_new_password_signs_in_and_signs_out_other_sessions(tmp_path, outbox):
+def test_reset_sets_the_new_password_and_signs_out_every_session(tmp_path, outbox):
     with TestClient(create_app(tmp_path, email_sender=outbox)) as other_device, \
          TestClient(create_app(tmp_path, email_sender=outbox)) as this_device:
         sign_in(other_device, email="ana@riverside.example", name="Ana Lopez")
@@ -138,11 +138,10 @@ def test_reset_sets_the_new_password_signs_in_and_signs_out_other_sessions(tmp_p
         forgot(this_device)
         response = reset(this_device, token_in(outbox.sent[-1]))
         assert response.status_code == 200
-        assert response.json()["user"]["email"] == "ana@riverside.example"
-        assert SESSION_COOKIE in response.cookies
-        assert this_device.get("/api/auth/me").status_code == 200
-        assert other_device.get("/api/auth/me").status_code == 401  # signed out everywhere else
-        this_device.post("/api/auth/logout")
+        assert response.json() == {"message": "Your password has been reset. Log in with your new password."}
+        assert SESSION_COOKIE not in response.cookies
+        assert this_device.get("/api/auth/me").status_code == 401  # they log in again with the new password
+        assert other_device.get("/api/auth/me").status_code == 401  # signed out everywhere
         assert login(this_device, PASSWORD).status_code == 401
         assert login(this_device, NEW_PASSWORD).status_code == 200
 

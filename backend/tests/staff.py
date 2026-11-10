@@ -13,8 +13,9 @@ class StaffClient(TestClient):
 
 
 def sign_in(client: TestClient, company="Test Company", email="staff@example.com", name="Sam Staff", password=PASSWORD) -> dict:
-    response = client.post("/api/auth/signup", json={"company": company, "name": name, "email": email, "password": password})
-    if response.status_code == 409:  # the account already exists (e.g. after an app restart): log in instead
-        response = client.post("/api/auth/login", json={"email": email, "password": password})
-    assert response.status_code in (200, 201), response.text
+    """Create the account (unless it already exists, e.g. after an app restart), then log in: sign-up alone doesn't."""
+    created = client.post("/api/auth/signup", json={"company": company, "name": name, "email": email, "password": password})
+    assert created.status_code in (201, 409), created.text
+    response = client.post("/api/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
     return response.json()

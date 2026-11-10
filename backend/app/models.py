@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, model_validator
 
 
 PRINTED_ENCODING = "cp1252"  # what the PDF's built-in font can draw (Western European)
@@ -73,6 +73,8 @@ EMAIL_SHAPE = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200), AfterValidator(no_nul)]
 Email = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=254, pattern=EMAIL_SHAPE), AfterValidator(no_nul)]
 Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100), AfterValidator(no_nul)]
+# The staff member's note to the signer, shown in the email. Blank means no note.
+Message = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000), AfterValidator(no_nul), AfterValidator(lambda text: text or None)]
 
 
 class FileCreate(BaseModel):
@@ -82,6 +84,13 @@ class FileCreate(BaseModel):
     signer_name: Name
     signer_email: Email
     agreement_id: Identifier
+    message: Message = None
+
+
+class SendOptions(BaseModel):
+    """Optional body of send / reissue link."""
+    model_config = ConfigDict(extra="forbid")
+    email: StrictBool = True  # email the link to the signer
 
 
 class FileUpdate(BaseModel):
@@ -93,13 +102,14 @@ class FileUpdate(BaseModel):
     signer_name: Name = None
     signer_email: Email = None
     agreement_id: Identifier = None
+    message: Message = None
 
     @model_validator(mode="after")
     def has_changes(self):
         changes = self.model_fields_set - {"version"}
         if not changes:
             raise ValueError("Change at least one field.")
-        if any(getattr(self, name) is None for name in changes):
+        if any(getattr(self, name) is None for name in changes - {"message"}):  # only the optional message can be cleared
             raise ValueError("Fields cannot be cleared.")
         return self
 

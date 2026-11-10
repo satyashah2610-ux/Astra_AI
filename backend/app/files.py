@@ -6,15 +6,18 @@ and models.py (input validation). This module handles HTTP and persistence.
 import hashlib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from .database import write_lock
+from .email import signing_email
 from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
-from .models import FileCreate, FileUpdate
+from .links import app_url
+from .models import FileCreate, FileUpdate, SendOptions
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .signed_pdf import mark_type, print_text_marks
 from .storage import Storage, utc_now
@@ -22,10 +25,11 @@ from .tokens import hash_token, new_token
 
 logger = logging.getLogger("astrasign.files")
 
-PUBLIC_FIELDS = ("id", "title", "client_name", "signer_name", "signer_email", "agreement_id", "status",
+PUBLIC_FIELDS = ("id", "title", "client_name", "signer_name", "signer_email", "agreement_id", "message", "status",
                  "document_name", "document_sha256", "page_count", "version",
                  "created_at", "updated_at", "sent_at", "viewed_at", "signed_at")
 LINK_STATUSES = {FileStatus.SENT, FileStatus.VIEWED}
+SIGNING_EMAILS_PER_DAY = 50  # per company: enough for real work, too few to use our domain for spam
 
 
 def public_file(row) -> dict:
@@ -42,7 +46,7 @@ def signing_path(token: str) -> str:
     return f"/sign#{token}"
 
 
-def create_files_router(storage: Storage, current_user) -> APIRouter:
+def create_files_router(storage: Storage, current_user, email_sender=None) -> APIRouter:
     router = APIRouter(prefix="/api/files", tags=["files"])
 
     Staff = Depends(current_user)  # every endpoint here needs a logged-in user
@@ -57,6 +61,39 @@ def create_files_router(storage: Storage, current_user) -> APIRouter:
             raise HTTPException(422, "Choose an agreement that exists in your library.")
         return agreement
 
+    def deliver_link(file: dict, link: str, account: dict) -> None:
+        """Runs after the response: the file is already sent, so a failed email is recorded, never raised."""
+        email = signing_email(to=file["signer_email"], signer_name=file["signer_name"], sender_name=account["name"],
+                              sender_email=account["email"], company=account["organization_name"],
+                              document_name=file["document_name"], message=file["message"], link=link)
+        try:
+            email_sender.send(email)
+            outcome = "email_sent"
+        except Exception as exc:  # EmailError, or anything unexpected from the provider client
+            logger.warning("Signing email not delivered id=%s: %s", file["id"], exc)
+            outcome = "email_failed"
+        with storage.database() as db:
+            write_lock(db)  # the file can't be deleted between the check and the insert
+            if db.execute("SELECT 1 FROM files WHERE id = %s", (file["id"],)).fetchone():  # deleted meanwhile: nothing to record
+                record_event(db, file["id"], outcome, detail=file["signer_email"])
+
+    def email_choice(db, options: SendOptions | None, account: dict) -> str:
+        """Inside the send's transaction, under the write lock, so parallel sends can't pass the limit together.
+        Returns what the response reports: "sending", "off", "not_configured" or "limit_reached"."""
+        if options is not None and not options.email:
+            return "off"
+        if email_sender is None:
+            return "not_configured"
+        day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        organization_id = account["organization_id"]
+        db.execute("DELETE FROM signing_emails WHERE organization_id = %s AND at <= %s", (organization_id, day_ago))
+        sent = db.execute("SELECT COUNT(*) FROM signing_emails WHERE organization_id = %s", (organization_id,)).fetchone()[0]
+        if sent >= SIGNING_EMAILS_PER_DAY:
+            logger.warning("Signing email limit reached organization=%s", organization_id)
+            return "limit_reached"
+        db.execute("INSERT INTO signing_emails (organization_id, at) VALUES (%s, %s)", (organization_id, utc_now()))
+        return "sending"
+
     @router.post("", status_code=201)
     def create_file(body: FileCreate, account: dict = Staff):
         identifier, now = str(uuid4()), utc_now()
@@ -64,9 +101,9 @@ def create_files_router(storage: Storage, current_user) -> APIRouter:
             write_lock(db)  # the agreement cannot be deleted between the check and the insert
             require_agreement(db, body.agreement_id, account["organization_id"])
             db.execute("""INSERT INTO files (id, organization_id, title, client_name, signer_name, signer_email, agreement_id,
-                          status, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                          message, status, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                        (identifier, account["organization_id"], body.title, body.client_name, body.signer_name, body.signer_email,
-                        body.agreement_id, FileStatus.DRAFT, now, now))
+                        body.agreement_id, body.message, FileStatus.DRAFT, now, now))
             record_event(db, identifier, "created", at=now)
             created = public_file(fetch(db, identifier, account["organization_id"]))
         logger.info("File created id=%s", identifier)
@@ -118,8 +155,10 @@ def create_files_router(storage: Storage, current_user) -> APIRouter:
         return Response(status_code=204)
 
     @router.post("/{identifier}/send")
-    def send_file(identifier: str, account: dict = Staff):
+    def send_file(identifier: str, request: Request, background: BackgroundTasks, options: SendOptions | None = None,
+                  account: dict = Staff):
         token, target, written = new_token(), storage.document_pdf(identifier), False
+        base_url = app_url(request)  # before any change: a refused host can't leave a sent file with an unseen link
         try:
             with storage.database() as db:
                 write_lock(db)  # serializes concurrent sends of the same file
@@ -147,17 +186,21 @@ def create_files_router(storage: Storage, current_user) -> APIRouter:
                            (FileStatus.SENT, agreement["name"], hashlib.sha256(content).hexdigest(), agreement["page_count"],
                             json.dumps([m for m in marks if mark_type(m) != "text"]), hash_token(token), now, now, identifier))
                 record_event(db, identifier, "sent", at=now)
+                email = email_choice(db, options, account)
                 sent = public_file(fetch(db, identifier, account["organization_id"]))
         except BaseException:
             if written:
                 target.unlink(missing_ok=True)
             raise
         logger.info("File sent id=%s fields=%s", identifier, sent["field_count"])
-        return {"file": sent, "signing_path": signing_path(token)}
+        if email == "sending":
+            background.add_task(deliver_link, sent, f"{base_url}{signing_path(token)}", account)
+        return {"file": sent, "signing_path": signing_path(token), "email": email}
 
     @router.post("/{identifier}/link")
-    def reissue_link(identifier: str, account: dict = Staff):
-        token = new_token()
+    def reissue_link(identifier: str, request: Request, background: BackgroundTasks, options: SendOptions | None = None,
+                     account: dict = Staff):
+        token, base_url = new_token(), app_url(request)
         with storage.database() as db:
             write_lock(db)
             current = public_file(fetch(db, identifier, account["organization_id"]))
@@ -168,9 +211,12 @@ def create_files_router(storage: Storage, current_user) -> APIRouter:
             db.execute("UPDATE files SET token_hash = %s, updated_at = %s, version = version + 1 WHERE id = %s",
                        (hash_token(token), now, identifier))
             record_event(db, identifier, "link_reissued", at=now)
+            email = email_choice(db, options, account)
             reissued = public_file(fetch(db, identifier, account["organization_id"]))
         logger.info("File link reissued id=%s", identifier)
-        return {"file": reissued, "signing_path": signing_path(token)}
+        if email == "sending":
+            background.add_task(deliver_link, reissued, f"{base_url}{signing_path(token)}", account)
+        return {"file": reissued, "signing_path": signing_path(token), "email": email}
 
     @router.get("/{identifier}/events")
     def file_events(identifier: str, account: dict = Staff):

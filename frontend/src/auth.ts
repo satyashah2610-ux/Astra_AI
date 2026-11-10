@@ -7,10 +7,10 @@ const json = { 'Content-Type': 'application/json' };
 export const authApi = {
   me: () => request<Account>('/api/auth/me'),
   login: (email: string, password: string) => request<Account>('/api/auth/login', { method: 'POST', headers: json, body: JSON.stringify({ email, password }) }),
-  signup: (values: SignupValues) => request<Account>('/api/auth/signup', { method: 'POST', headers: json, body: JSON.stringify(values) }),
+  signup: (values: SignupValues) => request<{ message: string }>('/api/auth/signup', { method: 'POST', headers: json, body: JSON.stringify(values) }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   forgot: (email: string) => request<{ message: string }>('/api/auth/forgot', { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
-  reset: (token: string, password: string) => request<Account>('/api/auth/reset', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
+  reset: (token: string, password: string) => request<{ message: string }>('/api/auth/reset', { method: 'POST', headers: json, body: JSON.stringify({ token, password }) }),
 };
 
 /** The secret from a `/reset-password#<token>` link (fragments never reach servers or logs), or null. */

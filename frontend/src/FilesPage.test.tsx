@@ -10,7 +10,7 @@ const blank: Agreement = { ...mind, id: 'a2', name: 'Blank agreement', marks: []
 
 // --- an in-memory backend with the same rules as the real one ---------------------------------------
 let files: FileItem[];
-let events: Record<string, { type: string; at: string; ip: string | null; user_agent: string | null }[]>;
+let events: Record<string, { type: string; at: string; ip: string | null; user_agent: string | null; detail: string | null }[]>;
 let tokens: number;
 let nextId: number;
 let failSend: boolean;
@@ -18,18 +18,25 @@ let failDelete: boolean;
 let holdList: boolean;
 let releaseList: (() => void) | null;
 let requests: { method: string; url: string; body?: any }[];
+let emailSetup: 'sending' | 'not_configured' | 'limit_reached';
+let pendingEmail: Record<string, string>;  // delivered after the response, like the real background task
 
 function json(body: unknown, status = 200) { return new Response(status === 204 ? null : JSON.stringify(body), { status }); }
-function event(id: string, type: string) { (events[id] ??= []).push({ type, at: '2026-11-09T12:00:00+00:00', ip: type === 'viewed' || type === 'signed' ? '203.0.113.7' : null, user_agent: null }); }
+function event(id: string, type: string, detail: string | null = null) { (events[id] ??= []).push({ type, at: '2026-11-09T12:00:00+00:00', ip: type === 'viewed' || type === 'signed' ? '203.0.113.7' : null, user_agent: null, detail }); }
+function emailResult(file: FileItem, body?: { email?: boolean }) {
+  if (body?.email === false) return 'off';
+  if (emailSetup === 'sending') pendingEmail[file.id] = file.signer_email;
+  return emailSetup;
+}
 function makeFile(overrides: Partial<FileItem> = {}): FileItem {
   nextId += 1;
-  return { id: `f${nextId}`, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', status: 'draft',
+  return { id: `f${nextId}`, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: null, status: 'draft',
     document_name: null, document_sha256: null, page_count: null, version: 0, created_at: `2026-11-09T12:${String(nextId).padStart(2, "0")}:00+00:00`, updated_at: '2026-11-09T12:00:00+00:00',
     sent_at: null, viewed_at: null, signed_at: null, field_count: 0, ...overrides };
 }
 
 beforeEach(() => {
-  files = []; events = {}; tokens = 0; nextId = 0; failSend = false; failDelete = false; holdList = false; releaseList = null; requests = [];
+  files = []; events = {}; tokens = 0; nextId = 0; failSend = false; failDelete = false; holdList = false; releaseList = null; requests = []; emailSetup = 'sending'; pendingEmail = {};
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn(async () => {}) }, configurable: true });
   vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit = {}) => {
     const method = options.method ?? 'GET';
@@ -44,7 +51,11 @@ beforeEach(() => {
     }
     if (url === '/api/files' && method === 'POST') { const created = makeFile(body); files.push(created); event(created.id, 'created'); return json(created, 201); }
     if (!file) return json({ detail: 'File not found.' }, 404);
-    if (action === 'events') return json(events[file.id] ?? []);
+    if (action === 'events') {
+      const answer = json(JSON.parse(JSON.stringify(events[file.id] ?? [])));
+      if (pendingEmail[file.id]) { event(file.id, 'email_sent', pendingEmail[file.id]); delete pendingEmail[file.id]; }
+      return answer;
+    }
     if (method === 'PATCH') {
       if (file.version !== body.version) return json({ detail: 'This file was changed in another tab.' }, 409);
       const { version: _v, ...changes } = body;
@@ -56,9 +67,9 @@ beforeEach(() => {
       if (failSend) return json({ detail: 'Could not send. Try again.' }, 503);
       Object.assign(file, { status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1, version: file.version + 1 });
       event(file.id, 'sent');
-      return json({ file, signing_path: `/sign#token-${++tokens}` });
+      return json({ file, signing_path: `/sign#token-${++tokens}`, email: emailResult(file, body) });
     }
-    if (action === 'link') { event(file.id, 'link_reissued'); return json({ file, signing_path: `/sign#token-${++tokens}` }); }
+    if (action === 'link') { event(file.id, 'link_reissued'); return json({ file, signing_path: `/sign#token-${++tokens}`, email: emailResult(file, body) }); }
     return json({ detail: 'Unexpected request' }, 500);
   }));
 });
@@ -126,7 +137,7 @@ it('saves a draft, edits it with the version check, then sends it', async () => 
   await userEvent.type(field('Signer name'), 'Alex Smith');
   await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
   expect(await screen.findByText('Alex Smith')).toBeInTheDocument();
-  expect(requests.find(r => r.method === 'PATCH')!.body).toEqual({ version: 0, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Alex Smith', signer_email: 'jordan@example.com', agreement_id: 'a1' });
+  expect(requests.find(r => r.method === 'PATCH')!.body).toEqual({ version: 0, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Alex Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: '' });
   await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);
 });
@@ -276,4 +287,78 @@ it('picks a ready agreement as soon as agreements arrive, even if the form opene
 it('labels the status filters as a group for screen readers', async () => {
   render(<FilesPage agreements={[mind]} />);
   expect(await screen.findByRole('group', { name: 'Filter by status' })).toBeInTheDocument();
+});
+
+// --- emailing the signing link ------------------------------------------------------------------------
+
+it('emails the link with a personal message by default, and shows the delivery on the timeline', async () => {
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+  await fillForm();
+  await userEvent.type(field('Personal message (optional)'), 'Hi Jordan,{enter}Here is the agreement.');
+  expect(field('Email the link to the signer')).toBeChecked();
+  await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  expect(await screen.findByText(/emailing this link to Jordan Smith/i)).toHaveTextContent('jordan@example.com');
+  expect(requests.find(r => r.method === 'POST' && r.url === '/api/files')!.body.message).toBe('Hi Jordan,\nHere is the agreement.');
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true });
+  expect(screen.getByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);  // copying still works
+  const timeline = screen.getByRole('list', { name: 'Timeline' });
+  expect(await within(timeline).findByText('Email sent', {}, { timeout: 5000 })).toBeInTheDocument();
+  expect(within(timeline).getByText('to jordan@example.com')).toBeInTheDocument();
+  expect(screen.getByText(/Here is the agreement/)).toBeInTheDocument();  // the message is shown on the file
+}, 10000);
+
+it('can send without emailing, for staff who share the link another way', async () => {
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+  await fillForm();
+  await userEvent.click(field('Email the link to the signer'));
+  await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  expect(await screen.findByText(/Send this link to Jordan Smith/)).toBeInTheDocument();
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: false });
+});
+
+it('says so when email is not set up, so staff copy the link', async () => {
+  emailSetup = 'not_configured';
+  files = [makeFile()];
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+  expect(await screen.findByText(/Email isn’t set up/)).toBeInTheDocument();
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true });
+});
+
+it('lets staff choose whether a reissued link is emailed', async () => {
+  files = [makeFile({ status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1 })];
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Reissue link' }));
+  const dialog = screen.getByRole('dialog');
+  const box = within(dialog).getByLabelText('Email the new link to the signer');
+  expect(box).toBeChecked();
+  await userEvent.click(box);
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Make a new link' }));
+  expect(await screen.findByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);
+  expect(requests.find(r => r.url.endsWith('/link'))!.body).toEqual({ email: false });
+});
+
+it('shows an undelivered email on the timeline', async () => {
+  files = [makeFile({ status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1 })];
+  event(files[0].id, 'email_failed', 'jordan@example.com');
+  render(<FilesPage agreements={[mind]} />);
+  const timeline = await screen.findByRole('list', { name: 'Timeline' });
+  expect(await within(timeline).findByText('Email not delivered')).toBeInTheDocument();
+  expect(within(timeline).getByText('to jordan@example.com')).toBeInTheDocument();
+});
+
+it('limits the personal message to 2,000 characters', async () => {
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+  expect(field('Personal message (optional)')).toHaveAttribute('maxLength', '2000');
+});
+
+it('explains when the daily email limit is reached, so staff copy the link', async () => {
+  emailSetup = 'limit_reached';
+  files = [makeFile()];
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+  expect(await screen.findByText(/daily email limit/i)).toHaveTextContent('send this link to Jordan Smith yourself');
 });

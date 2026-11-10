@@ -13,6 +13,8 @@ export default defineConfig({
   reporter: 'list',
   webServer: [
     { command: `${python} backend/scripts/run_e2e_backend.py`, cwd: root, url: 'http://127.0.0.1:8011/api/health', reuseExistingServer: false, env: { ASTRA_DATA_DIR: resolve(tmpdir(), `astra-e2e-${Date.now()}`), ASTRA_EMAIL_OUTBOX: outbox, ASTRA_ENV_DIR: resolve(tmpdir(), 'astra-e2e-no-env-files') } },
-    { command: 'npm run dev -- --port 5174', url: 'http://127.0.0.1:5174', reuseExistingServer: false, env: { API_TARGET: 'http://127.0.0.1:8011' } },
+    // The built app (vite preview), not the dev server: no live reload or on-the-fly rebuilding mid-test, closer to production.
+    // stdout is piped so TypeScript errors from `tsc -b` (printed to stdout) show when the build fails.
+    { command: 'npm run build && npm run preview -- --port 5174 --strictPort', url: 'http://127.0.0.1:5174', timeout: 180000, stdout: 'pipe', reuseExistingServer: false, env: { API_TARGET: 'http://127.0.0.1:8011' } },
   ],
 });

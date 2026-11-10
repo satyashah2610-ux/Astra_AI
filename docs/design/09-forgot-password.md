@@ -14,7 +14,7 @@ Login page ── "Forgot password?" ──► POST /api/auth/forgot {email}
                                        └─► if the account exists and limits allow: store sha256(token), email a link
 Email ── "Choose a new password" ──► /reset-password#<token>   (secret in the fragment: never sent to servers or logs)
 Reset page ── POST /api/auth/reset {token, password} ──► new password, link used up, every session signed out,
-                                                         then signed in on this browser
+                                                         then "Password reset" with a link to log in (no automatic sign-in)
 ```
 
 - **One link, one hour, one use.** A random 256-bit secret; only its SHA-256 is stored. A successful reset uses up every outstanding reset link for that user.
@@ -52,8 +52,8 @@ Reset page ── POST /api/auth/reset {token, password} ──► new password,
 
 **Unit:** Resend request shape (endpoint, auth header, JSON body) with a fake transport; outbox writes one JSON file per email; no key means no sender; reset email escapes the user's name and contains the link.
 
-**Integration:** a known email gets exactly one email with a working link while the database holds only the hash; an unknown email gets the same answer and no email; email case doesn't matter; resetting sets the new password, rejects the old one, uses the link up and signs out other sessions; expired, used and made-up links are refused; password rules apply; per-account and per-IP limits stop sending without changing the answer; a sending failure doesn't change the answer; the link uses `ASTRA_APP_URL` or the allow-listed host; both endpoints work without a login.
+**Integration:** a known email gets exactly one email with a working link while the database holds only the hash; an unknown email gets the same answer and no email; email case doesn't matter; resetting sets the new password, rejects the old one, uses the link up and signs out every session without starting a new one; expired, used and made-up links are refused; password rules apply; per-account and per-IP limits stop sending without changing the answer; a sending failure doesn't change the answer; the link uses `ASTRA_APP_URL` or the allow-listed host; both endpoints work without a login.
 
-**Frontend:** the forgot form shows the same confirmation for any email; the reset page checks length and matching passwords, sends the token from the fragment, signs in on success, and explains an invalid link with a way to request a new one.
+**Frontend:** the forgot form shows the same confirmation for any email; the reset page checks length and matching passwords, sends the token from the fragment, on success shows "Password reset" with a link to log in (no automatic sign-in) and drops the used link from the address bar, and explains an invalid link with a way to request a new one.
 
 **Browser:** request a reset in the UI, open the emailed link from the outbox, set a new password, log in with it.

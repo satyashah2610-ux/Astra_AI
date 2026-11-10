@@ -128,7 +128,7 @@ test('Astra Sign branding and confirmed deletion persist after reload', async ({
   const request = page.request;
   await page.goto('/');
   await expect(page).toHaveTitle('Astra Sign — Agreements');
-  await expect(page.getByRole('link', { name: 'Astra Sign Agreements' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Astra Sign', exact: true })).toBeVisible();  // the logo only
   const pdf = await request.get('/api/sample-agreement.pdf');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Delete this test agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByRole('heading', { name: 'Delete this test agreement', exact: true })).toBeVisible();

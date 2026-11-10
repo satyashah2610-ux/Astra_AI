@@ -17,7 +17,8 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-EVENT_LABELS = {"created": "Created", "sent": "Sent", "link_reissued": "Link reissued", "viewed": "Viewed", "signed": "Signed"}
+EVENT_LABELS = {"created": "Created", "sent": "Sent", "link_reissued": "Link reissued", "viewed": "Viewed", "signed": "Signed",
+                "email_sent": "Email sent", "email_failed": "Email not delivered"}
 METHOD_LABELS = {"typed": "Typed", "drawn": "Drawn"}
 SIGNATURE_MAX_WIDTH, SIGNATURE_MAX_HEIGHT = 2.2 * inch, 0.9 * inch  # signature on the certificate page
 SIGNER_INK, COMPANY_INK = "#1d2c4d", "#111111"

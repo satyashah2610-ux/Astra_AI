@@ -6,7 +6,6 @@ import base64
 import hashlib
 import hmac
 import logging
-import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -17,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from .database import utc_now
 from .email import EmailError, reset_email
 from .events import request_origin
-from .security import UNKNOWN_HOST, parse_host
+from .links import app_url, secure_cookies
 from .models import ForgotBody, LoginBody, ResetBody, SignupBody
 from .storage import Storage
 
@@ -30,6 +29,8 @@ NOT_LOGGED_IN = "Log in to continue."
 WRONG_LOGIN = "Email or password is incorrect."
 RESET_SENT = "If an account exists for that email, we’ve sent a link to reset the password."
 RESET_INVALID = "This reset link is invalid or has expired. Request a new one."
+ACCOUNT_CREATED = "Account created. Log in to continue."
+PASSWORD_RESET = "Your password has been reset. Log in with your new password."
 RESET_MINUTES = 60
 RESETS_PER_EMAIL_PER_HOUR = 3
 RESETS_PER_IP_PER_HOUR = 10
@@ -92,9 +93,6 @@ def create_auth(storage: Storage, email_sender=None):
     """The /api/auth router and the `current_user` dependency every staff endpoint uses."""
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-    def secure_cookies(request: Request) -> bool:
-        return request.url.scheme == "https" or os.environ.get("ASTRA_SECURE_COOKIES") == "1"
-
     def set_session_cookie(request: Request, response: Response, token: str) -> None:
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax",
                             secure=secure_cookies(request), path="/")
@@ -123,7 +121,7 @@ def create_auth(storage: Storage, email_sender=None):
         return dict(row)
 
     @router.post("/signup", status_code=201)
-    def signup(body: SignupBody, request: Request, response: Response):
+    def signup(body: SignupBody):
         organization_id, user_id, now = str(uuid4()), str(uuid4()), utc_now()
         password_hash = hash_password(body.password)
         try:
@@ -131,12 +129,10 @@ def create_auth(storage: Storage, email_sender=None):
                 db.execute("INSERT INTO organizations (id, name, created_at) VALUES (%s, %s, %s)", (organization_id, body.company, now))
                 db.execute("INSERT INTO users (id, organization_id, name, email, password_hash, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
                            (user_id, organization_id, body.name, body.email.lower(), password_hash, now))
-                start_session(db, request, response, user_id)
-                account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user_id,)).fetchone()
         except psycopg.errors.UniqueViolation as exc:
             raise HTTPException(409, "An account with this email already exists. Log in instead.") from exc
         logger.info("Account created organization=%s user=%s", organization_id, user_id)
-        return public_account(account)
+        return {"message": ACCOUNT_CREATED}  # no session: they log in next, which also confirms the password
 
     @router.post("/login")
     def login(body: LoginBody, request: Request, response: Response):
@@ -164,21 +160,6 @@ def create_auth(storage: Storage, email_sender=None):
     @router.get("/me")
     def me(account: dict = Depends(current_user)):
         return public_account(account)
-
-    def app_url(request: Request) -> str:
-        """Where links in emails point: ASTRA_APP_URL, or this request's host rebuilt from its checked parts.
-        Never the raw Host header: anything but a clean host[:port] is refused, so a link can't be pointed elsewhere.
-        Behind a TLS-terminating proxy (ASTRA_SECURE_COOKIES=1) the request arrives as http, but the link must be https."""
-        configured = os.environ.get("ASTRA_APP_URL", "").strip().rstrip("/")
-        if configured:
-            return configured
-        parsed = parse_host(request.headers.get("host", ""))
-        if parsed is None:  # the middleware already refuses these; never build a link from one
-            raise HTTPException(400, UNKNOWN_HOST)
-        name, port = parsed
-        host = f"[{name}]" if ":" in name else name
-        scheme = "https" if secure_cookies(request) else request.url.scheme
-        return f"{scheme}://{host}{'' if port is None else f':{port}'}"
 
     def deliver(email) -> None:
         """Runs after the response is sent, so a known email isn't slower to answer than an unknown one."""
@@ -213,7 +194,7 @@ def create_auth(storage: Storage, email_sender=None):
         return {"message": RESET_SENT}  # identical for every email, sent or not
 
     @router.post("/reset")
-    def reset(body: ResetBody, request: Request, response: Response):
+    def reset(body: ResetBody):
         password_hash = hash_password(body.password)  # hashed before taking a connection
         now = utc_now()
         with storage.database() as db:
@@ -225,10 +206,8 @@ def create_auth(storage: Storage, email_sender=None):
             user_id = used["user_id"]
             db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
             db.execute("UPDATE password_resets SET used_at = %s WHERE user_id = %s AND used_at IS NULL", (now, user_id))
-            db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # sign out everywhere else
-            start_session(db, request, response, user_id)
-            account = db.execute(ACCOUNT_QUERY + " WHERE u.id = %s", (user_id,)).fetchone()
+            db.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))  # signed out everywhere
         logger.info("Password reset completed user=%s", user_id)
-        return public_account(account)
+        return {"message": PASSWORD_RESET}  # no session: they log in with the new password
 
     return router, current_user

@@ -4,7 +4,7 @@ import type { Agreement } from './api';
 
 const agreement = (marks = 1): Agreement => ({ id: 'a1', name: 'MIND agreement', filename: 'MIND.pdf', page_count: 2, version: 1, created_at: '', updated_at: '',
   marks: Array.from({ length: marks }, (_, i) => ({ id: `m${i}`, page: 1, x: .1, y: .5, width: .3, height: .08 })) });
-const values = (overrides: Partial<FileValues> = {}): FileValues => ({ title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', ...overrides });
+const values = (overrides: Partial<FileValues> = {}): FileValues => ({ title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: '', ...overrides });
 
 describe('signingUrl', () => {
   it('joins the app origin and the signing path', () => {
@@ -20,9 +20,12 @@ describe('validateFile', () => {
   it.each([
     [{ title: '  ' }, 'title'], [{ client_name: '' }, 'client_name'], [{ signer_name: '' }, 'signer_name'],
     [{ signer_email: 'not-an-email' }, 'signer_email'], [{ signer_email: 'a@b' }, 'signer_email'], [{ signer_email: 'a b@c.com' }, 'signer_email'],
-    [{ title: 'x'.repeat(201) }, 'title'], [{ agreement_id: '' }, 'agreement_id'], [{ agreement_id: 'missing' }, 'agreement_id'],
+    [{ title: 'x'.repeat(201) }, 'title'], [{ message: 'x'.repeat(2001) }, 'message'], [{ agreement_id: '' }, 'agreement_id'], [{ agreement_id: 'missing' }, 'agreement_id'],
   ] as [Partial<FileValues>, keyof FileValues][])('flags %o', (change, field) => {
     expect(Object.keys(validateFile(values(change), [agreement()]))).toEqual([field]);
+  });
+  it('accepts a message of up to 2,000 characters', () => {
+    expect(validateFile(values({ message: 'x'.repeat(2000) }), [agreement()])).toEqual({});
   });
   it('rejects an agreement that has no signature boxes yet', () => {
     expect(validateFile(values(), [agreement(0)]).agreement_id).toMatch(/signature box/i);
@@ -40,7 +43,9 @@ describe('sendable and labels', () => {
   });
   it('labels every status and event', () => {
     expect(STATUS_LABELS).toEqual({ draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' });
-    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed']);
+    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed', 'email_sent', 'email_failed']);
+    expect(EVENT_LABELS.email_sent).toBe('Email sent');
+    expect(EVENT_LABELS.email_failed).toBe('Email not delivered');
   });
 });
 
@@ -53,8 +58,8 @@ describe('fileApi', () => {
     await fileApi.list();
     await fileApi.create(values());
     await fileApi.update('f/1', 3, { signer_name: 'Alex' });
-    await fileApi.send('f/1');
-    await fileApi.reissue('f/1');
+    await fileApi.send('f/1', true);
+    await fileApi.reissue('f/1', false);
     await fileApi.events('f/1');
     fetch.mockImplementationOnce(async () => new Response(null, { status: 204 }));
     await fileApi.remove('f/1');
@@ -63,8 +68,8 @@ describe('fileApi', () => {
       ['/api/files', 'GET', undefined],
       ['/api/files', 'POST', values()],
       ['/api/files/f%2F1', 'PATCH', { version: 3, signer_name: 'Alex' }],
-      ['/api/files/f%2F1/send', 'POST', undefined],
-      ['/api/files/f%2F1/link', 'POST', undefined],
+      ['/api/files/f%2F1/send', 'POST', { email: true }],
+      ['/api/files/f%2F1/link', 'POST', { email: false }],
       ['/api/files/f%2F1/events', 'GET', undefined],
       ['/api/files/f%2F1', 'DELETE', undefined],
     ]);
@@ -74,9 +79,9 @@ describe('fileApi', () => {
   it('trims values before sending them', async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({})));
     vi.stubGlobal('fetch', fetch);
-    await fileApi.create(values({ title: '  Smith kitchen  ', signer_email: ' jordan@example.com ' }));
+    await fileApi.create(values({ title: '  Smith kitchen  ', signer_email: ' jordan@example.com ', message: '  Hi Jordan  ' }));
     const [, options] = (fetch.mock.calls as unknown as [string, RequestInit][])[0];
-    expect(JSON.parse(options.body as string)).toMatchObject({ title: 'Smith kitchen', signer_email: 'jordan@example.com' });
+    expect(JSON.parse(options.body as string)).toMatchObject({ title: 'Smith kitchen', signer_email: 'jordan@example.com', message: 'Hi Jordan' });
   });
 });
 

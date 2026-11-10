@@ -5,7 +5,6 @@ import ResetPasswordPage from './ResetPasswordPage';
 import { resetTokenFromLocation } from './auth';
 
 const token = 'Abc_def-1234567890Abc_def-1234567890Abc_def';
-const account = { user: { id: 'u1', name: 'Ana Lopez', email: 'ana@riverside.example' }, organization: { id: 'o1', name: 'Riverside Builders' } };
 let calls: any[];
 let valid: boolean;
 
@@ -14,7 +13,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
     calls.push({ url, body: options?.body ? JSON.parse(options.body as string) : undefined });
     if (url === '/api/auth/reset') {
-      return valid ? new Response(JSON.stringify(account)) : new Response(JSON.stringify({ detail: 'This reset link is invalid or has expired. Request a new one.' }), { status: 400 });
+      return valid ? new Response(JSON.stringify({ message: 'Your password has been reset. Log in with your new password.' })) : new Response(JSON.stringify({ detail: 'This reset link is invalid or has expired. Request a new one.' }), { status: 400 });
     }
     return new Response('{}', { status: 500 });
   }));
@@ -32,7 +31,7 @@ it('reads the reset token only from /reset-password#<token>', () => {
 });
 
 it('checks the new password before sending it', async () => {
-  render(<ResetPasswordPage token={token} onSignedIn={vi.fn()} />);
+  render(<ResetPasswordPage token={token} />);
   expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument();
   await userEvent.type(field('New password'), 'short');
   await userEvent.click(screen.getByRole('button', { name: 'Save new password' }));
@@ -45,19 +44,24 @@ it('checks the new password before sending it', async () => {
   expect(calls).toHaveLength(0);
 });
 
-it('saves the new password with the token from the link and signs in', async () => {
-  const onSignedIn = vi.fn();
-  render(<ResetPasswordPage token={token} onSignedIn={onSignedIn} />);
+it('saves the new password with the token from the link, then sends them to log in', async () => {
+  window.history.replaceState(null, '', `/reset-password#${token}`);
+  render(<ResetPasswordPage token={token} />);
   await userEvent.type(field('New password'), 'a brand new passphrase');
   await userEvent.type(field('Confirm new password'), 'a brand new passphrase');
   await userEvent.click(screen.getByRole('button', { name: 'Save new password' }));
-  await waitFor(() => expect(onSignedIn).toHaveBeenCalledWith(account));
+  expect(await screen.findByRole('heading', { name: 'Password reset' })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Your password has been reset. Log in with your new password.');
+  expect(screen.getByRole('link', { name: 'Go to log in' })).toHaveAttribute('href', '/');
+  expect(screen.queryByLabelText('New password', { exact: true })).not.toBeInTheDocument();
   expect(calls).toEqual([{ url: '/api/auth/reset', body: { token, password: 'a brand new passphrase' } }]);
+  expect(window.location.hash).toBe('');  // the used link leaves the address bar (and a reload doesn't show the form again)
+  expect(screen.getByRole('region', { name: 'Password reset' })).toBeInTheDocument();
 });
 
 it('explains an invalid or expired link and offers a new one', async () => {
   valid = false;
-  render(<ResetPasswordPage token={token} onSignedIn={vi.fn()} />);
+  render(<ResetPasswordPage token={token} />);
   await userEvent.type(field('New password'), 'a brand new passphrase');
   await userEvent.type(field('Confirm new password'), 'a brand new passphrase');
   await userEvent.click(screen.getByRole('button', { name: 'Save new password' }));
