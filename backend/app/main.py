@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pypdf import PdfReader
 from .auth import create_auth
-from .database import write_lock
+from .database import clean_database_url, write_lock
 from .email import sender_from_env
 from .events import trusted_proxies
 from .models import SaveMarks
@@ -62,6 +62,7 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
     if not url:
         raise RuntimeError("DATABASE_URL is not set. Put your PostgreSQL connection string in .env.local "
                            "(DATABASE_URL=postgresql://...) or in the environment before starting the backend.")
+    url = clean_database_url(url)  # before connecting: a malformed address never reaches a log line
     storage = Storage(Path(data_dir or os.environ.get("ASTRA_DATA_DIR") or Path(__file__).resolve().parents[1] / "data"), url)
     storage.initialize()
 
