@@ -61,7 +61,8 @@ test('a client opens the link, types a signature, consents and signs', async ({ 
   expect(Buffer.compare(await staffCopy.body(), signedPdf)).toBe(0);  // signer and staff get the identical document
   const file = await (await request.get(`/api/files/${fileId}`)).json();
   expect(file.status).toBe('signed');
-  expect(await timeline(request, fileId)).toEqual(['created', 'sent', 'viewed', 'signed']);
+  // The staff member is told by email just after the response.
+  await expect.poll(() => timeline(request, fileId)).toEqual(['created', 'sent', 'viewed', 'signed', 'signed_notice_sent']);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'This agreement is already signed' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign agreement' })).toHaveCount(0);

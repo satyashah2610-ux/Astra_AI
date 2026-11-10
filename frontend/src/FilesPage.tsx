@@ -143,6 +143,7 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
             {selected.message && <div><dt>Message</dt><dd><span className="file-message">{selected.message}</span></dd></div>}
             {selected.sent_at && <div><dt>Sent</dt><dd><span>{when(selected.sent_at)}</span></dd></div>}
             {selected.signed_at && <div><dt>Signed</dt><dd><span>{when(selected.signed_at)}</span></dd></div>}
+            {(selected.reminders_sent > 0 || selected.next_reminder_at) && <div><dt>Reminders</dt><dd><span>{selected.reminders_sent === 0 ? 'None sent yet' : `${selected.reminders_sent} sent`}</span>{selected.next_reminder_at && <span className="muted">Next {when(selected.next_reminder_at)}</span>}</dd></div>}
           </dl>
 
           <div className="file-actions">

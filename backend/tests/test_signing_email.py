@@ -161,8 +161,8 @@ def test_a_file_deleted_while_its_email_is_sending_leaves_no_event(tmp_path):
 
 @pytest.fixture
 def small_limit(monkeypatch):
-    import app.files
-    monkeypatch.setattr(app.files, "SIGNING_EMAILS_PER_DAY", 2)
+    import app.email_limit
+    monkeypatch.setattr(app.email_limit, "SIGNING_EMAILS_PER_DAY", 2)
 
 
 def test_after_the_daily_limit_files_are_still_sent_but_not_emailed(client, outbox, small_limit):

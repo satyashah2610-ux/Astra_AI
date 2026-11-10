@@ -336,6 +336,7 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 .form-field input:focus-visible, .form-field select:focus-visible, .form-field textarea:focus-visible, .mark-text-field textarea:focus-visible { outline: 0; border-color: var(--focus); box-shadow: 0 0 0 3px rgba(45, 91, 216, .18); }
 .form-field.invalid input, .form-field.invalid select, .form-field.invalid textarea { border-color: var(--red); }
 .field-hint { font-size: 12px; font-weight: 400; color: var(--muted); }
+.check-hint { display: block; margin: -6px 0 4px 26px; }
 .field-error { font-size: 12px; font-weight: 500; color: var(--red); }
 .form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .check-row { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; }

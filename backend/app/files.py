@@ -6,7 +6,6 @@ and models.py (input validation). This module handles HTTP and persistence.
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -14,10 +13,12 @@ from fastapi.responses import FileResponse, Response
 
 from .database import write_lock
 from .email import signing_email
+from .email_limit import take_email_slot
 from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
 from .links import app_url
 from .models import FileCreate, FileUpdate, SendOptions
+from .reminders import after, record_delivery, reminder_interval
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .signed_pdf import mark_type, print_text_marks
 from .storage import Storage, utc_now
@@ -29,7 +30,9 @@ PUBLIC_FIELDS = ("id", "title", "client_name", "signer_name", "signer_email", "a
                  "document_name", "document_sha256", "page_count", "version",
                  "created_at", "updated_at", "sent_at", "viewed_at", "signed_at")
 LINK_STATUSES = {FileStatus.SENT, FileStatus.VIEWED}
-SIGNING_EMAILS_PER_DAY = 50  # per company: enough for real work, too few to use our domain for spam
+# Each file with how many reminders it has had; `remind_at` is shown as next_reminder_at.
+FILE_QUERY = """SELECT f.*, (SELECT COUNT(*) FROM file_events e WHERE e.file_id = f.id AND e.type = 'reminder_sent') AS reminders_sent
+                FROM files f"""
 
 
 def public_file(row) -> dict:
@@ -38,6 +41,7 @@ def public_file(row) -> dict:
         raise HTTPException(404, "File not found.")
     result = {key: row[key] for key in PUBLIC_FIELDS}
     result["field_count"] = sum(mark_type(m) == "signature" for m in json.loads(row["marks"])) if row["marks"] else 0
+    result["reminders_sent"], result["next_reminder_at"] = row["reminders_sent"], row["remind_at"]
     return result
 
 
@@ -53,7 +57,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
 
     def fetch(db, identifier, organization_id):
         """A file of this company only: another company's id is simply not found."""
-        return db.execute("SELECT * FROM files WHERE id = %s AND organization_id = %s", (identifier, organization_id)).fetchone()
+        return db.execute(f"{FILE_QUERY} WHERE f.id = %s AND f.organization_id = %s", (identifier, organization_id)).fetchone()
 
     def require_agreement(db, agreement_id, organization_id):
         agreement = db.execute("SELECT * FROM agreements WHERE id = %s AND organization_id = %s", (agreement_id, organization_id)).fetchone()
@@ -66,16 +70,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
         email = signing_email(to=file["signer_email"], signer_name=file["signer_name"], sender_name=account["name"],
                               sender_email=account["email"], company=account["organization_name"],
                               document_name=file["document_name"], message=file["message"], link=link)
-        try:
-            email_sender.send(email)
-            outcome = "email_sent"
-        except Exception as exc:  # EmailError, or anything unexpected from the provider client
-            logger.warning("Signing email not delivered id=%s: %s", file["id"], exc)
-            outcome = "email_failed"
-        with storage.database() as db:
-            write_lock(db)  # the file can't be deleted between the check and the insert
-            if db.execute("SELECT 1 FROM files WHERE id = %s", (file["id"],)).fetchone():  # deleted meanwhile: nothing to record
-                record_event(db, file["id"], outcome, detail=file["signer_email"])
+        record_delivery(storage, email_sender, email, file["id"], "email_sent", "email_failed")
 
     def email_choice(db, options: SendOptions | None, account: dict) -> str:
         """Inside the send's transaction, under the write lock, so parallel sends can't pass the limit together.
@@ -84,15 +79,13 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
             return "off"
         if email_sender is None:
             return "not_configured"
-        day_ago = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        organization_id = account["organization_id"]
-        db.execute("DELETE FROM signing_emails WHERE organization_id = %s AND at <= %s", (organization_id, day_ago))
-        sent = db.execute("SELECT COUNT(*) FROM signing_emails WHERE organization_id = %s", (organization_id,)).fetchone()[0]
-        if sent >= SIGNING_EMAILS_PER_DAY:
-            logger.warning("Signing email limit reached organization=%s", organization_id)
-            return "limit_reached"
-        db.execute("INSERT INTO signing_emails (organization_id, at) VALUES (%s, %s)", (organization_id, utc_now()))
-        return "sending"
+        return "sending" if take_email_slot(db, account["organization_id"]) else "limit_reached"
+
+    def schedule_reminders(db, identifier: str, email: str, account: dict, base_url: str) -> None:
+        """After a send or reissue: earlier reminder links stop working; reminders follow only an emailed link."""
+        db.execute("DELETE FROM signing_links WHERE file_id = %s", (identifier,))
+        db.execute("UPDATE files SET remind_at = %s, sent_by = %s, link_base = %s WHERE id = %s",
+                   (after(reminder_interval()) if email == "sending" else None, account["user_id"], base_url, identifier))
 
     @router.post("", status_code=201)
     def create_file(body: FileCreate, account: dict = Staff):
@@ -112,7 +105,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
     @router.get("")
     def list_files(account: dict = Staff):
         with storage.database() as db:
-            return [public_file(row) for row in db.execute("SELECT * FROM files WHERE organization_id = %s ORDER BY created_at DESC, seq DESC", (account["organization_id"],))]
+            return [public_file(row) for row in db.execute(f"{FILE_QUERY} WHERE f.organization_id = %s ORDER BY f.created_at DESC, f.seq DESC", (account["organization_id"],))]
 
     @router.get("/{identifier}")
     def get_file(identifier: str, account: dict = Staff):
@@ -187,6 +180,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                             json.dumps([m for m in marks if mark_type(m) != "text"]), hash_token(token), now, now, identifier))
                 record_event(db, identifier, "sent", at=now)
                 email = email_choice(db, options, account)
+                schedule_reminders(db, identifier, email, account, base_url)
                 sent = public_file(fetch(db, identifier, account["organization_id"]))
         except BaseException:
             if written:
@@ -212,6 +206,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                        (hash_token(token), now, identifier))
             record_event(db, identifier, "link_reissued", at=now)
             email = email_choice(db, options, account)
+            schedule_reminders(db, identifier, email, account, base_url)
             reissued = public_file(fetch(db, identifier, account["organization_id"]))
         logger.info("File link reissued id=%s", identifier)
         if email == "sending":

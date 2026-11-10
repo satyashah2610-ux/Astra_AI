@@ -32,7 +32,7 @@ function makeFile(overrides: Partial<FileItem> = {}): FileItem {
   nextId += 1;
   return { id: `f${nextId}`, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: null, status: 'draft',
     document_name: null, document_sha256: null, page_count: null, version: 0, created_at: `2026-11-09T12:${String(nextId).padStart(2, "0")}:00+00:00`, updated_at: '2026-11-09T12:00:00+00:00',
-    sent_at: null, viewed_at: null, signed_at: null, field_count: 0, ...overrides };
+    sent_at: null, viewed_at: null, signed_at: null, field_count: 0, reminders_sent: 0, next_reminder_at: null, ...overrides };
 }
 
 beforeEach(() => {
@@ -370,4 +370,35 @@ it('file rows show the client and the signer, and the name once when they are th
   expect(within(kitchen).getByText('Smith Family')).toBeInTheDocument();
   expect(within(kitchen).getByText('Jordan Smith')).toBeInTheDocument();
   expect(within(screen.getByRole('button', { name: /^Garage/ })).getAllByText('Jo Lee')).toHaveLength(1);
+});
+
+it('shows the reminders a waiting file has had and when the next one goes out', async () => {
+  files = [makeFile({ status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1, reminders_sent: 2, next_reminder_at: '2026-11-11T12:30:00+00:00' })];
+  ['created', 'sent'].forEach(type => event('f1', type));
+  event('f1', 'reminder_sent', 'jordan@example.com');
+  event('f1', 'reminder_failed', 'jordan@example.com');
+  render(<FilesPage agreements={[mind]} />);
+  const reminders = (await screen.findByText('Reminders')).closest('div')!;
+  expect(reminders).toHaveTextContent('2 sent');
+  expect(reminders).toHaveTextContent(/Next .*(Nov 11|11 Nov)/);  // the browser's own date format
+  expect(await screen.findByText('Reminder sent')).toBeInTheDocument();
+  const timeline = screen.getByRole('list', { name: 'Timeline' });
+  expect(timeline).toHaveTextContent('Reminder not delivered');
+});
+
+it('a signed file shows the company was told, and no next reminder', async () => {
+  files = [makeFile({ status: 'signed', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', signed_at: '2026-11-09T13:00:00+00:00', field_count: 1, reminders_sent: 1 })];
+  ['created', 'sent', 'reminder_sent', 'signed'].forEach(type => event('f1', type));
+  event('f1', 'signed_notice_sent', 'ana@riverside.example');
+  render(<FilesPage agreements={[mind]} />);
+  expect(await screen.findByText('Company notified')).toBeInTheDocument();
+  const reminders = screen.getByText('Reminders').closest('div')!;
+  expect(reminders).toHaveTextContent('1 sent');
+  expect(reminders).not.toHaveTextContent('Next');
+});
+
+it('says reminders follow an emailed link', async () => {
+  render(<FilesPage agreements={[mind]} />);
+  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+  expect(screen.getByText(/reminder every day until/i)).toBeInTheDocument();
 });
