@@ -284,8 +284,8 @@ it('sends every placed item, the initials and the time zone with the signature',
   expect(body.utc_offset_minutes).toBe(-new Date().getTimezoneOffset());
 });
 
-it('says "all the highlighted boxes" when there is more than one signature box', async () => {
+it('says "the highlighted boxes" when there is more than one signature box', async () => {
   state = { ...view, marks: [...view.marks, { id: 'm2', page: 2, x: .1, y: .8, width: .3, height: .08 }] };
   render(<SigningPage token={token} />);
-  expect(await screen.findByText('Hi Jordan Smith, please read the agreement and sign below. Your signature will be placed in all the highlighted boxes.')).toBeInTheDocument();
+  expect(await screen.findByText('Hi Jordan Smith, please read the agreement and sign below. Your signature will be placed in the highlighted boxes.')).toBeInTheDocument();
 });

@@ -37,7 +37,7 @@
 .pad-tabs button{flex:1;border:0;background:none;border-radius:5px;padding:8px;font-size:12px;color:#66766a}
 .pad-tabs button[aria-selected=true]{background:#fff;color:#2f5a45;box-shadow:0 1px 2px #0000001a;font-weight:600}
 .typed-preview{height:96px;border:1px solid #d7dfd5;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0 12px;background:#fffefb;overflow:hidden}
-.typed-preview span{font:500 40px 'Caveat','Segoe Script',cursive;color:#1d2c4d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.typed-preview span{font:500 40px 'Caveat','Segoe Script',cursive;color:#1d2c4d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 .3em}
 .typed-preview small,.draw-hint{font-size:12px;color:#97a196}
 .draw-area{position:relative;border:1px solid #d7dfd5;border-radius:7px;background:#fffefb}
 .draw-area canvas{display:block;width:100%;aspect-ratio:3/1;touch-action:none;cursor:crosshair;position:relative;z-index:1}

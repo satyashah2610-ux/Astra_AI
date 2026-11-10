@@ -115,7 +115,7 @@ export default function SigningPage({ token }: { token: string }) {
       <aside className="signing-panel">
         <div className="eyebrow">SIGNATURE REQUESTED</div>
         <h1>{view.document_name}</h1>
-        <p className="signing-intro">Hi {view.signer_name}, please read the agreement and sign below. Your signature will be placed in {oneBox ? 'the highlighted box' : 'all the highlighted boxes'}.</p>
+        <p className="signing-intro">Hi {view.signer_name}, please read the agreement and sign below. Your signature will be placed in {oneBox ? 'the highlighted box' : 'the highlighted boxes'}.</p>
         <button className="text-button" onClick={goToBox}><ArrowDown size={14} />Go to signature {oneBox ? 'box' : 'boxes'}</button>
         <div className="field-divider" />
         <label className="form-field"><span>Full name</span><input value={name} onChange={e => setName(e.target.value)} maxLength={200} autoComplete="name" disabled={busy} /></label>

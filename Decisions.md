@@ -170,3 +170,9 @@
 ## 2026-11-09 - Signing page greeting
 - The greeting now reads "…Your signature will be placed in the highlighted box." for one box and "…in all the highlighted boxes." for several. The Full name field stays pre-filled from the name the company entered on the file (the user considered an empty field and a confirmation dialog, then chose to keep the current behaviour).
 - Code review: no defects; the singular/plural check is now one variable. Noted for later: "Go to signature boxes" scrolls to the first box only.
+
+## 2026-11-09 - Typed signature clipping; greeting wording
+- Bug: in the typed-signature preview the last letter was cut off (e.g. the "l" in "Nihal"). Handwriting fonts draw swashes past a letter's advance width, and the preview text had `overflow: hidden` with no padding. The preview now has 0.3 em of room on each side; long names still end in "…". A browser-test check asserts the room exists (CSS isn't loaded in unit tests).
+- The code review found the same problem in the **signature image stamped into the PDF**: names were sized by advance width only, so a long name's final swash could be cut at the image edge. The name is now shrunk until its measured ink width also fits. A new unit test (a fake font whose ink is wider than its advance) fails without the fix.
+- Greeting now: "…Your signature will be placed in the highlighted box." (one) / "…in the highlighted boxes." (several).
+- Review notes not acted on: the typed signature's smallest size (28 px) can still clip a 60+ character name. Raising it is a product choice (cap the name length or warn); recorded for later.

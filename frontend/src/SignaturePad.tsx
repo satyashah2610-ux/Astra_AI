@@ -16,8 +16,14 @@ export async function renderTypedSignature(name: string): Promise<string | null>
   const context = canvas.getContext('2d');
   if (!context) return null;
   await document.fonts?.load(`64px ${SCRIPT_FONT}`).catch(() => undefined);
+  // Handwriting fonts draw past their advance width, so fit on the inked extent where the browser reports it.
+  const inkWidth = () => {
+    const metrics = context.measureText(name);
+    const ink = (metrics.actualBoundingBoxLeft ?? 0) + (metrics.actualBoundingBoxRight ?? 0);
+    return Math.max(metrics.width, ink);
+  };
   let size = 72;
-  do { context.font = `500 ${size}px ${SCRIPT_FONT}`; size -= 4; } while (size > 24 && context.measureText(name).width > TYPED.width - 40);
+  do { context.font = `500 ${size}px ${SCRIPT_FONT}`; size -= 4; } while (size > 24 && inkWidth() > TYPED.width - 40);
   context.fillStyle = '#1d2c4d';
   context.textAlign = 'center';
   context.textBaseline = 'middle';

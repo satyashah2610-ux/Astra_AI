@@ -32,6 +32,10 @@ test('a client opens the link, types a signature, consents and signs', async ({ 
   await expect(sign).toBeDisabled();
   await expect(page.getByLabel('Full name')).toHaveValue('Jordan Smith');
   await expect(page.getByLabel('Signature preview')).toContainText('Jordan Smith');
+  // Handwriting fonts draw past the end of the last letter: the preview must leave room so it isn't clipped.
+  const preview = page.getByLabel('Signature preview').locator('span');
+  const room = await preview.evaluate(element => { const style = getComputedStyle(element); return [parseFloat(style.paddingLeft), parseFloat(style.paddingRight)]; });
+  expect(Math.min(...room)).toBeGreaterThanOrEqual(8);
   await page.getByRole('button', { name: 'Go to signature box' }).click();
   await expect(page.getByTestId('sign-here')).toBeInViewport();
   await expect(page.getByTestId('sign-here').getByRole('img', { name: 'Your signature' })).toBeVisible();
