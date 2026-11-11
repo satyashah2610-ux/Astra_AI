@@ -337,3 +337,11 @@
 - `PATCH /api/agreements/{id}` `{name}`: trimmed, 1-200 characters, this company only; a name taken by another of the company's agreements (case ignored) is numbered with the same rule as uploads; keeping its own name (even in other capitals) adds no number. It changes neither the boxes nor the version, so unsaved box edits in the editor can still be saved. Files already sent keep the name they were sent with.
 - Editor: a pencil beside the agreement's name; Enter or clicking away saves, Escape cancels.
 - TDD: 10 backend and 3 frontend tests, all failed first; 1 browser test added. No code or security review, by the product owner's choice for this change.
+
+## 2026-11-11 - "Opened by signer" for every link, not just the first
+- Reported: after **Reissue link**, opening the new link added nothing to the timeline. Only the file's first open was recorded (the 2026-11-09 rule "Only the first open counts"), and a reissue leaves the file Viewed.
+- Now the first open of **each issued link** is recorded, with time and IP: the original, each reissued link, and each reminder's link. Reloads of a link already opened add nothing, and the file's status and first-viewed time are unchanged. This replaces the earlier rule.
+- Tracked per link, not guessed from the timeline: `files.link_opened_at` for the current link (cleared by a reissue) and `signing_links.opened_at` for reminder links (migration 0009). A first draft compared the latest events instead; the code review showed it miscounted an old link reopened after a reminder and raced with reminder emails, so it was replaced. Links already opened before this deploy count as opened.
+- The certificate now says "Opened by signer", like the timeline, instead of "Viewed".
+- TDD: 7 integration tests (4 failed first: reissued link, reminder link, old link after a reminder, certificate label; 3 guards for reloads, the first-viewed time and signed files).
+- Code review (7 findings; all addressed): the order-guessing approach (3 findings) replaced by per-link tracking; this entry records the changed decision; the certificate label matches the timeline; the test's order check made readable; the reviewer's SQL simplification no longer applies (that query is gone).
