@@ -45,6 +45,7 @@ test('staff add text and a comment; the client places ticks, dots, text, name, d
   await page.getByLabel('Signer email').fill('riley@example.com');
   await page.getByLabel('Agreement').selectOption({ label: 'Items agreement' });
   await page.getByRole('button', { name: 'Create and send' }).click();
+  await page.getByRole('button', { name: 'Confirm and send' }).click();  // after checking the details
   const link = await page.getByLabel('Signing link').inputValue();
 
   // Client: sees the comment, places items on page 1, signs.

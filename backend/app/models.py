@@ -2,9 +2,13 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, model_validator
 
+from .signatures import decode_signature_png
+
 
 PRINTED_ENCODING = "cp1252"  # what the PDF's built-in font can draw (Western European)
-MARK_TYPES = Literal["signature", "text", "comment"]
+MARK_TYPES = Literal["signature", "text", "comment", "check", "dot", "name", "date", "initials", "company_signature"]
+TEXT_MARKS = {"text", "comment", "name"}  # hold text the company typed
+IMAGE_MARKS = {"initials", "company_signature"}  # hold the company's adopted initials or signature
 
 
 def no_nul(text: str) -> str:
@@ -28,8 +32,14 @@ def check_inside_page(box, message: str) -> None:
         raise ValueError(message)
 
 
+def valid_png(data_url: str) -> str:
+    decode_signature_png(data_url)  # raises a ValueError with a readable message
+    return data_url
+
+
 class SignatureMark(BaseModel):
-    """An item on a template: a signature box for the client, company text (printed), or a comment (a note, never printed)."""
+    """An item on a template: a signature box for the client, a comment (a note, never printed), or something the
+    company fills in itself, printed when the file is sent: text, name, date (the send date), tick, dot, initials, signature."""
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     id: str = Field(min_length=1, max_length=100)
     page: StrictInt = Field(ge=1)
@@ -39,18 +49,24 @@ class SignatureMark(BaseModel):
     height: float = Field(gt=0, le=1)
     type: MARK_TYPES = "signature"
     text: str | None = Field(default=None, max_length=1000)
+    image: Annotated[str, StringConstraints(max_length=700_000), AfterValidator(valid_png)] | None = None
 
     @model_validator(mode="after")
     def valid_item(self):
         check_inside_page(self, "Signature boxes must stay inside the PDF page.")
-        if self.type == "signature":
-            if self.text is not None:
-                raise ValueError("Signature boxes don't hold text.")
+        if self.type not in TEXT_MARKS and self.text is not None:
+            raise ValueError("Only text, names and comments hold text.")
+        if self.type in IMAGE_MARKS:
+            if self.image is None:
+                raise ValueError("Adopt the initials or signature before placing it.")
+        elif self.image is not None:
+            raise ValueError("Only initials and signatures hold an image.")
+        if self.type not in TEXT_MARKS:
             return self
         text = no_nul((self.text or "").strip())
         if not text:
-            raise ValueError("Text and comments can't be empty.")
-        self.text = printable(text) if self.type == "text" else text
+            raise ValueError("Text, names and comments can't be empty.")
+        self.text = text if self.type == "comment" else printable(text)
         return self
 
 
@@ -91,6 +107,7 @@ class SendOptions(BaseModel):
     """Optional body of send / reissue link."""
     model_config = ConfigDict(extra="forbid")
     email: StrictBool = True  # email the link to the signer
+    utc_offset_minutes: StrictInt = Field(default=0, ge=-840, le=840)  # the sender's time zone, for the company's Date items
 
 
 class FileUpdate(BaseModel):

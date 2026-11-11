@@ -69,7 +69,7 @@ describe('fileApi', () => {
       ['/api/files', 'GET', undefined],
       ['/api/files', 'POST', values()],
       ['/api/files/f%2F1', 'PATCH', { version: 3, signer_name: 'Alex' }],
-      ['/api/files/f%2F1/send', 'POST', { email: true }],
+      ['/api/files/f%2F1/send', 'POST', { email: true, utc_offset_minutes: -new Date().getTimezoneOffset() }],
       ['/api/files/f%2F1/link', 'POST', { email: false }],
       ['/api/files/f%2F1/events', 'GET', undefined],
       ['/api/files/f%2F1', 'DELETE', undefined],

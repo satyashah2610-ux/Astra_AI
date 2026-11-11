@@ -4,6 +4,7 @@ import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import { PDF_OPTIONS } from './pdfjs';
 import { boxStyle as position } from './geometry';
 import type { Mark } from './api';
+import PageJump from './PageJump';
 
 type Source = { url: string; httpHeaders: Record<string, string> };
 export type Comment = { id: string; page: number; x: number; y: number; width: number; height: number; text: string };
@@ -22,6 +23,7 @@ export default function PdfPages({ source, marks, pageCount, signature, comments
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState('');
   const [width, setWidth] = useState(640);
+  const [jumped, setJumped] = useState(1);  // the page last asked for
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +40,14 @@ export default function PdfPages({ source, marks, pageCount, signature, comments
     return () => observer.disconnect();
   }, []);
 
+  const total = pdf?.numPages ?? pageCount;
+  function goTo(page: number) {
+    setJumped(page);
+    container.current?.querySelectorAll('[data-testid="signing-page"]')[page - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   return <div className="signing-pages" ref={container}>
+    {!error && total > 1 && <div className="page-jump-bar"><PageJump current={jumped} total={total} onGo={goTo} /></div>}
     {error ? <div className="pdf-error" role="alert">{error}</div>
       : Array.from({ length: pdf?.numPages ?? pageCount }, (_, index) => <PdfPage key={index} pdf={pdf} page={index + 1} width={width} marks={marks.filter(mark => mark.page === index + 1)} comments={comments.filter(note => note.page === index + 1)} renderOverlay={renderOverlay} signature={signature} total={pdf?.numPages ?? pageCount} />)}
   </div>;

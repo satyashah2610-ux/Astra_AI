@@ -23,6 +23,7 @@ test('sending a file emails the signer a personal message and a link that opens 
   await page.getByLabel('Personal message (optional)').fill('Hi Morgan,\nHere is the agreement we discussed. <b>Thanks!</b>');
   await expect(page.getByLabel('Email the link to the signer')).toBeChecked();
   await page.getByRole('button', { name: 'Create and send' }).click();
+  await page.getByRole('button', { name: 'Confirm and send' }).click();  // after checking the details
   await expect(page.getByText(/Emailing this link to Morgan Reed/)).toBeVisible();
   const shownLink = await page.getByLabel('Signing link').inputValue();
   await expect(page.getByRole('list', { name: 'Timeline' }).getByText('Email sent')).toBeVisible({ timeout: 10000 });

@@ -114,6 +114,7 @@ it('creates and sends in one step, then shows the full link to copy', async () =
   await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
   await fillForm();
   await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByRole('heading', { name: 'Smith kitchen', level: 2 })).toBeInTheDocument();
   expect(screen.getByTestId('file-status')).toHaveTextContent('Sent');
   const link = screen.getByLabelText('Signing link');
@@ -139,6 +140,7 @@ it('saves a draft, edits it with the version check, then sends it', async () => 
   await waitFor(() => expect(screen.getAllByText('Alex Smith')).toHaveLength(2));  // the list row and the file's details
   expect(requests.find(r => r.method === 'PATCH')!.body).toEqual({ version: 0, title: 'Smith kitchen', client_name: 'Smith Family', signer_name: 'Alex Smith', signer_email: 'jordan@example.com', agreement_id: 'a1', message: '' });
   await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);
 });
 
@@ -185,10 +187,12 @@ it('shows a server error and keeps the draft when sending fails', async () => {
   failSend = true;
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not send');
   expect(screen.getByTestId('file-status')).toHaveTextContent('Draft');
   failSend = false;
   await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByLabelText('Signing link')).toBeInTheDocument();
 });
 
@@ -224,6 +228,7 @@ it('a refresh that started before a send cannot put the file back to Draft', asy
   holdList = true;
   await act(async () => { window.dispatchEvent(new Event('focus')); });  // refresh starts: server still says Draft
   await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByLabelText('Signing link')).toBeInTheDocument();
   await act(async () => { releaseList!(); });  // the old answer arrives late
   expect(screen.getByTestId('file-status')).toHaveTextContent('Sent');
@@ -298,9 +303,10 @@ it('emails the link with a personal message by default, and shows the delivery o
   await userEvent.type(field('Personal message (optional)'), 'Hi Jordan,{enter}Here is the agreement.');
   expect(field('Email the link to the signer')).toBeChecked();
   await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/emailing this link to Jordan Smith/i)).toHaveTextContent('jordan@example.com');
   expect(requests.find(r => r.method === 'POST' && r.url === '/api/files')!.body.message).toBe('Hi Jordan,\nHere is the agreement.');
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true });
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
   expect(screen.getByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);  // copying still works
   const timeline = screen.getByRole('list', { name: 'Timeline' });
   expect(await within(timeline).findByText('Email sent', {}, { timeout: 5000 })).toBeInTheDocument();
@@ -314,8 +320,9 @@ it('can send without emailing, for staff who share the link another way', async 
   await fillForm();
   await userEvent.click(field('Email the link to the signer'));
   await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/Send this link to Jordan Smith/)).toBeInTheDocument();
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: false });
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: false, utc_offset_minutes: -new Date().getTimezoneOffset() });
 });
 
 it('says so when email is not set up, so staff copy the link', async () => {
@@ -323,8 +330,9 @@ it('says so when email is not set up, so staff copy the link', async () => {
   files = [makeFile()];
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/Email isn’t set up/)).toBeInTheDocument();
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true });
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
 });
 
 it('lets staff choose whether a reissued link is emailed', async () => {
@@ -360,6 +368,7 @@ it('explains when the daily email limit is reached, so staff copy the link', asy
   files = [makeFile()];
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/daily email limit/i)).toHaveTextContent('send this link to Jordan Smith yourself');
 });
 
@@ -484,5 +493,94 @@ describe('filling a new file from an earlier client', () => {
     await userEvent.clear(field('Client name'));
     await userEvent.type(field('Client name'), 'Pat');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+});
+
+describe('checking the details before sending', () => {
+  it('Create and send first shows every detail; nothing is created until it is confirmed', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    await fillForm();
+    await userEvent.type(field('Personal message (optional)'), 'Hi Jordan');
+    await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+    const dialog = screen.getByRole('dialog', { name: 'Check the details before sending' });
+    for (const text of ['Smith kitchen', 'Smith Family', 'Jordan Smith', 'jordan@example.com', 'MIND agreement', 'Hi Jordan', 'Yes, with a daily reminder until signed'])
+      expect(within(dialog).getByText(text)).toBeInTheDocument();
+    expect(requests.filter(r => r.method === 'POST')).toHaveLength(0);
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Go back and edit' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(field('Signer email')).toHaveValue('jordan@example.com');  // nothing lost
+    expect(requests.filter(r => r.method === 'POST')).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm and send' }));
+    expect(await screen.findByTestId('file-status')).toHaveTextContent('Sent');
+    expect(requests.map(r => `${r.method} ${r.url}`)).toEqual(expect.arrayContaining(['POST /api/files', 'POST /api/files/f1/send']));
+  });
+
+  it('sending a draft also asks to check its details first', async () => {
+    files = [makeFile({ title: 'Patel garden', client_name: 'Patel', signer_name: 'Riya Patel', signer_email: 'riya@example.com' })];
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
+    const dialog = screen.getByRole('dialog', { name: 'Check the details before sending' });
+    expect(within(dialog).getByText('riya@example.com')).toBeInTheDocument();
+    expect(within(dialog).getByText('MIND agreement')).toBeInTheDocument();
+    expect(requests.some(r => r.url.endsWith('/send'))).toBe(false);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm and send' }));
+    expect(await screen.findByLabelText('Signing link')).toBeInTheDocument();
+  });
+});
+
+describe('live updates', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('the file and its timeline update by themselves when the signer acts', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const sent = makeFile({ status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1, version: 1 });
+    files = [sent];
+    event(sent.id, 'sent');
+    render(<FilesPage agreements={[mind]} />);
+    expect(await screen.findByTestId('file-status')).toHaveTextContent('Sent');
+
+    Object.assign(sent, { status: 'signed', signed_at: '2026-11-09T13:00:00+00:00', version: 3 });  // signed in another browser
+    event(sent.id, 'viewed'); event(sent.id, 'signed'); event(sent.id, 'signed_notice_sent', 'owner@example.com');
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(screen.getByTestId('file-status')).toHaveTextContent('Signed');
+    expect(within(screen.getByRole('list', { name: 'Timeline' })).getByText('Company notified')).toBeInTheDocument();
+  });
+});
+
+describe('live updates never act on stale work', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('an open edit form keeps its version, so another tab’s change is reported, not overwritten', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const draft = makeFile({ title: 'Patel garden' });
+    files = [draft];
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    Object.assign(draft, { signer_email: 'changed@elsewhere.com', version: 1 });  // edited in another tab
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    await userEvent.clear(field('Signer name'));
+    await userEvent.type(field('Signer name'), 'Alex Smith');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText(/changed in another tab/)).toBeInTheDocument();
+    expect(draft.signer_email).toBe('changed@elsewhere.com');
+  });
+
+  it('the send check closes if its file disappears, so another file is never sent by mistake', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const first = makeFile({ title: 'First job' });
+    const second = makeFile({ title: 'Second job' });
+    files = [first, second];
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^First job/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send for signature' }));
+    expect(screen.getByRole('dialog', { name: 'Check the details before sending' })).toBeInTheDocument();
+    files = files.filter(f => f !== first);  // deleted in another tab
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(screen.queryByRole('dialog', { name: 'Check the details before sending' })).not.toBeInTheDocument();
+    expect(requests.some(r => r.url.endsWith('/send'))).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Loader2, Save, Send } from 'lucide-react';
 import type { Agreement } from './api';
+import SendCheck from './SendCheck';
 import { cleanFileValues, matchSigners, MAX_MESSAGE, sendable, validateFile, type FieldErrors, type FileValues, type PastSigner } from './files';
 
 export type FormAction = 'send' | 'draft' | 'save';
@@ -29,6 +30,7 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
   const [emailLink, setEmailLink] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
   const [active, setActive] = useState(-1);
+  const [checking, setChecking] = useState(false);  // "Create and send" first shows every detail to check
   const suggestions = useMemo(() => mode === 'create' ? matchSigners(pastSigners, values.client_name) : [], [mode, pastSigners, values.client_name]);
   const listOpen = suggesting && suggestions.length > 0;
   useEffect(() => {  // the arrow keys keep the highlighted line visible in a long list
@@ -45,7 +47,9 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
     event?.preventDefault();
     const found = validateFile(values, agreements);
     setErrors(found);
-    if (Object.keys(found).length === 0) onSubmit(cleanFileValues(values), action, emailLink);
+    if (Object.keys(found).length > 0) return;
+    if (action === 'send') setChecking(true);
+    else onSubmit(cleanFileValues(values), action, emailLink);
   }
   const set = (key: keyof FileValues, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
   /** Fill the client, signer and email from an earlier file; everything else stays as it is. */
@@ -117,5 +121,7 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
           <button type="submit" className="primary" disabled={busy}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Create and send</button></>
         : <button type="submit" className="primary" disabled={busy}>{busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}Save changes</button>}
     </div>
+    {checking && <SendCheck values={cleanFileValues(values)} agreementName={agreements.find(a => a.id === values.agreement_id)?.name ?? ''} emailLink={emailLink} busy={busy}
+      onCancel={() => setChecking(false)} onConfirm={() => { setChecking(false); onSubmit(cleanFileValues(values), 'send', emailLink); }} />}
   </form>;
 }

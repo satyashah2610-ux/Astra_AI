@@ -1,7 +1,10 @@
 import type { Box } from './geometry';
-export type MarkType = 'signature' | 'text' | 'comment';
-/** A template item: a signature box for the client, company text (printed when sent) or a comment (shown to the client, never printed). */
-export type Mark = Box & { id: string; page: number; type?: MarkType; text?: string };
+/** What the company fills in itself, printed when the file is sent. `company_signature` is the company's own; `signature` is the client's box. */
+export type CompanyMarkType = 'check' | 'dot' | 'name' | 'date' | 'initials' | 'company_signature';
+export type MarkType = 'signature' | 'text' | 'comment' | CompanyMarkType;
+/** A template item: a signature box for the client, a comment (shown to the client, never printed), or company text,
+ * ticks, name, date, initials and signature (printed when sent). Initials and signatures carry the adopted PNG. */
+export type Mark = Box & { id: string; page: number; type?: MarkType; text?: string; image?: string };
 export type Agreement = { id: string; name: string; filename: string; page_count: number; marks: Mark[]; version: number; created_at: string; updated_at: string };
 
 /** Fired on window when the server says the staff session has ended. */

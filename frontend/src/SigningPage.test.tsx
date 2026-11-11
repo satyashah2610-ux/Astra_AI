@@ -9,6 +9,7 @@ import { blobText } from './test-utils';
 
 vi.mock('./PdfPages', () => ({ default: ({ marks, comments = [], renderOverlay }: any) => <div>
   <div>PDF with {marks.length} signature box</div>
+  {marks.map((m: any) => <div key={m.id} id={`sign-box-${m.id}`} />)}
   {comments.map((c: any) => <p key={c.id}>Note: {c.text}</p>)}
   <div>{renderOverlay?.(1, { width: 600, height: 776, points: 612 })}</div>
 </div> }));
@@ -296,4 +297,20 @@ it('says "the highlighted boxes" when there is more than one signature box', asy
   state = { ...view, marks: [...view.marks, { id: 'm2', page: 2, x: .1, y: .8, width: .3, height: .08 }] };
   render(<SigningPage token={token} />);
   expect(await screen.findByText('Hi Jordan Smith, please read the agreement and sign below. Your signature will be placed in the highlighted boxes.')).toBeInTheDocument();
+});
+
+it('Go to signature visits every box from the top of the document to the bottom, then starts again', async () => {
+  state = { ...view, marks: [
+    { id: 'last', page: 3, x: .1, y: .2, width: .3, height: .08 },
+    { id: 'first', page: 1, x: .5, y: .7, width: .3, height: .08 },
+    { id: 'second', page: 1, x: .1, y: .9, width: .3, height: .08 },
+    { id: 'third', page: 2, x: .1, y: .1, width: .3, height: .08 },
+  ] };
+  const visited: string[] = [];
+  Element.prototype.scrollIntoView = function (this: Element) { visited.push(this.id); };
+  render(<SigningPage token={token} />);
+  const go = await screen.findByRole('button', { name: /Go to signature/ });
+  for (let i = 0; i < 5; i++) await userEvent.click(go);
+  expect(visited.filter(id => id.startsWith('sign-box-'))).toEqual(['first', 'second', 'third', 'last', 'first'].map(id => `sign-box-${id}`));
+  expect(screen.getByRole('status', { name: 'Signature box position' })).toHaveTextContent('Box 1 of 4');
 });

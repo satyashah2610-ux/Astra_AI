@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PdfPages from './PdfPages';
 
@@ -33,4 +34,18 @@ it('shows company comments as notes and the signer’s own layer on each page', 
   expect(screen.getByLabelText('Page 2 of 2')).toHaveTextContent('Tick your plan here');
   expect(screen.getByText('Layer for page 1')).toBeInTheDocument();
   expect(screen.getByText('Layer for page 2')).toBeInTheDocument();
+});
+
+it('typing a page number and pressing Enter goes straight to that page', async () => {
+  const scrolled: string[] = [];
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this.getAttribute('aria-label') ?? ''); };
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '4{Enter}');
+  expect(scrolled).toEqual(['Page 4 of 5']);
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '99{Enter}');  // past the end: the last page
+  expect(scrolled.at(-1)).toBe('Page 5 of 5');
+  expect(jump).toHaveValue(5);
 });

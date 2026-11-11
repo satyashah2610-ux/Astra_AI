@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PdfEditor from './PdfEditor';
 import type { Agreement, Mark } from './api';
 import { pointerCapture, TestPointerEvent } from './test-utils';
 
 // A fake one-page PDF that "renders" instantly, so the editor becomes ready in jsdom.
 vi.mock('./pdfjs', () => ({ PDF_OPTIONS: {} }));
+vi.mock('./SignaturePad', () => ({
+  default: ({ onChange, label }: any) => <button onClick={() => onChange({ method: 'drawn', image: `data:image/png;base64,${(label ?? 'signature').toUpperCase()}` })}>Provide {label ?? 'signature'}</button>,
+}));
 vi.mock('pdfjs-dist', () => {
   const page = { getViewport: () => ({ width: 612, height: 792 }), render: () => ({ promise: Promise.resolve(), cancel() {} }) };
   return { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => page }), destroy: async () => {} }) };
@@ -24,10 +27,11 @@ beforeEach(() => {
 const agreement: Agreement = { id: 'a1', name: 'Agreement', filename: 'Agreement.pdf', page_count: 1, marks: [], version: 0, created_at: '', updated_at: '' };
 const box: Mark = { id: 'box-1', page: 1, x: .2, y: .5, width: .3, height: .08 };
 let latest: Mark[] = [];
+beforeEach(() => { latest = []; });
 
-function Harness({ initial }: { initial: Mark[] }) {
+function Harness({ initial, signerName }: { initial: Mark[]; signerName?: string }) {
   const [marks, setMarks] = useState(initial);
-  return <PdfEditor agreement={agreement} marks={marks} disabled={false} onChange={next => { latest = next; setMarks(next); }} />;
+  return <PdfEditor agreement={agreement} marks={marks} disabled={false} signerName={signerName} onChange={next => { latest = next; setMarks(next); }} />;
 }
 
 it('clicking a box focuses it, so arrow keys move it straight away', async () => {
@@ -90,4 +94,62 @@ it('keeps new signature boxes in the original shape, with no type', async () => 
   await userEvent.click(await screen.findByRole('button', { name: 'Add signature box' }));
   expect(latest[0]).not.toHaveProperty('type');
   expect(latest[0]).not.toHaveProperty('text');
+});
+
+it('typing a page number and pressing Enter shows that page', async () => {
+  render(<PdfEditor agreement={{ ...agreement, page_count: 5 }} marks={[]} disabled={false} onChange={() => {}} />);
+  const jump = await screen.findByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '4{Enter}');
+  expect(await screen.findByText('Page 4 of 5', { selector: '.page-caption span' })).toBeInTheDocument();
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '0{Enter}');  // before the start: the first page
+  expect(await screen.findByText('Page 1 of 5', { selector: '.page-caption span' })).toBeInTheDocument();
+});
+
+describe('the company fills in and signs its side', () => {
+  it('places a tick, a dot, its name and the send date', async () => {
+    render(<Harness initial={[]} signerName="Alex Morgan" />);
+    for (const tool of ['Tick', 'Dot', 'Name', 'Date']) await userEvent.click(await screen.findByRole('button', { name: tool }));
+    expect(latest.map(mark => mark.type)).toEqual(['check', 'dot', 'name', 'date']);
+    expect(latest[2].text).toBe('Alex Morgan');
+    expect(screen.getAllByTestId('company-field')).toHaveLength(4);
+  });
+
+  it('adopts a signature once, then places it on the page; the next one reuses it', async () => {
+    render(<Harness initial={[]} signerName="Alex Morgan" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Signature' }));
+    expect(latest).toEqual([]);  // nothing is placed before a signature is adopted
+    const place = screen.getByRole('button', { name: 'Place on the page' });
+    expect(place).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Provide signature' }));
+    await userEvent.click(place);
+    expect(latest).toEqual([expect.objectContaining({ type: 'company_signature', image: 'data:image/png;base64,SIGNATURE' })]);
+    await userEvent.click(screen.getByRole('button', { name: 'Signature' }));
+    expect(latest).toHaveLength(2);
+    expect(latest[1]).toEqual(expect.objectContaining({ type: 'company_signature', image: 'data:image/png;base64,SIGNATURE' }));
+  });
+
+  it('adopts initials the same way', async () => {
+    render(<Harness initial={[]} signerName="Alex Morgan" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Initials' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Provide initials' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Place on the page' }));
+    expect(latest).toEqual([expect.objectContaining({ type: 'initials', image: 'data:image/png;base64,INITIALS' })]);
+  });
+
+  it('cancelling the adoption places nothing', async () => {
+    render(<Harness initial={[]} signerName="Alex Morgan" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Signature' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Provide signature' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(latest).toEqual([]);
+    expect(screen.queryByRole('button', { name: 'Place on the page' })).not.toBeInTheDocument();
+  });
+});
+
+it('a name the PDF cannot print is not prefilled, so the template can still be saved', async () => {
+  render(<Harness initial={[]} signerName="Ołeksandr 李" />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Name' }));
+  expect(latest[0].text).toBe('Your name');
 });
