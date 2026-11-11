@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Loader2, Save, Send } from 'lucide-react';
 import type { Agreement } from './api';
-import { cleanFileValues, MAX_MESSAGE, sendable, validateFile, type FieldErrors, type FileValues } from './files';
+import { cleanFileValues, matchSigners, MAX_MESSAGE, sendable, validateFile, type FieldErrors, type FileValues, type PastSigner } from './files';
 
 export type FormAction = 'send' | 'draft' | 'save';
 type Props = {
   agreements: Agreement[];
+  pastSigners?: PastSigner[];  // offered while typing the client name of a new file
   initial?: FileValues;
   mode: 'create' | 'edit';
   busy: boolean;
@@ -22,10 +23,17 @@ const FIELDS: { key: Exclude<keyof FileValues, 'agreement_id' | 'message'>; labe
 ];
 
 /** Create or edit a file. Checks the same rules as the server before anything is sent. */
-export default function FileForm({ agreements, initial, mode, busy, onSubmit, onCancel }: Props) {
+export default function FileForm({ agreements, pastSigners = [], initial, mode, busy, onSubmit, onCancel }: Props) {
   const [values, setValues] = useState<FileValues>(initial ?? { ...EMPTY, agreement_id: agreements.find(sendable)?.id ?? '' });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [emailLink, setEmailLink] = useState(true);
+  const [suggesting, setSuggesting] = useState(false);
+  const [active, setActive] = useState(-1);
+  const suggestions = useMemo(() => mode === 'create' ? matchSigners(pastSigners, values.client_name) : [], [mode, pastSigners, values.client_name]);
+  const listOpen = suggesting && suggestions.length > 0;
+  useEffect(() => {  // the arrow keys keep the highlighted line visible in a long list
+    if (active >= 0) document.getElementById(`client-suggestion-${active}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [active]);
   const anySendable = agreements.some(sendable);
   const firstReady = agreements.find(sendable)?.id;
 
@@ -40,6 +48,23 @@ export default function FileForm({ agreements, initial, mode, busy, onSubmit, on
     if (Object.keys(found).length === 0) onSubmit(cleanFileValues(values), action, emailLink);
   }
   const set = (key: keyof FileValues, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
+  /** Fill the client, signer and email from an earlier file; everything else stays as it is. */
+  function choose(signer: PastSigner) {
+    setValues(current => ({ ...current, client_name: signer.client_name, signer_name: signer.signer_name, signer_email: signer.signer_email }));
+    setErrors(current => ({ ...current, client_name: undefined, signer_name: undefined, signer_email: undefined }));
+    setSuggesting(false); setActive(-1);
+  }
+  function suggestionKeys(event: KeyboardEvent<HTMLInputElement>) {
+    if (!listOpen) { if (event.key === 'ArrowDown' && suggestions.length) { event.preventDefault(); setSuggesting(true); setActive(0); } return; }
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActive(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); setActive(i => Math.max(i - 1, 0)); }
+    else if (event.key === 'Enter') {  // never sends the file
+      event.preventDefault();
+      const picked = suggestions[active];  // the list may have changed since the line was highlighted
+      if (picked) choose(picked); else setSuggesting(false);
+    }
+    else if (event.key === 'Escape') { event.preventDefault(); setSuggesting(false); setActive(-1); }
+  }
 
   return <form className="file-form" noValidate onSubmit={event => submit(mode === 'create' ? 'send' : 'save', event)} aria-labelledby="file-form-title">
     <h2 id="file-form-title">{mode === 'create' ? 'New file' : 'Edit file'}</h2>
@@ -47,10 +72,23 @@ export default function FileForm({ agreements, initial, mode, busy, onSubmit, on
     {FIELDS.map(field => {
       const id = `file-${field.key}`;
       const described = errors[field.key] ? `${id}-error` : field.hint ? `${id}-hint` : undefined;
-      return <div key={field.key} className={`form-field ${errors[field.key] ? 'invalid' : ''}`}>
+      const picker = field.key === 'client_name' && mode === 'create';  // earlier clients, offered while typing
+      return <div key={field.key} className={`form-field ${errors[field.key] ? 'invalid' : ''} ${picker ? 'with-suggestions' : ''}`}>
         <label htmlFor={id}>{field.label}</label>
-        <input id={id} type={field.type ?? 'text'} value={values[field.key]} maxLength={field.key === 'signer_email' ? 254 : 200} autoComplete={field.autoComplete ?? 'off'} disabled={busy}
-          aria-invalid={Boolean(errors[field.key])} aria-describedby={described} onChange={e => set(field.key, e.target.value)} />
+        <input id={id} type={field.type ?? 'text'} value={values[field.key]} maxLength={field.key === 'signer_email' ? 254 : 200} autoComplete={picker ? 'off' : (field.autoComplete ?? 'off')} disabled={busy}
+          aria-invalid={Boolean(errors[field.key])} aria-describedby={described}
+          onChange={e => { set(field.key, e.target.value); if (picker) { setSuggesting(true); setActive(-1); } }}
+          {...picker ? { role: 'combobox', 'aria-autocomplete': 'list' as const, 'aria-expanded': listOpen, 'aria-controls': listOpen ? 'client-suggestions' : undefined,
+            'aria-activedescendant': listOpen && active >= 0 ? `client-suggestion-${active}` : undefined,
+            onKeyDown: suggestionKeys, onBlur: () => { setSuggesting(false); setActive(-1); } } : {}} />
+        {picker && listOpen && <ul id="client-suggestions" className="suggestions" role="listbox" aria-label="Earlier clients"
+          onMouseDown={e => e.preventDefault()}>  {/* clicking a line or the scrollbar keeps the box focused, so the list stays open */}
+          {suggestions.map((signer, index) => <li key={`${signer.client_name}|${signer.signer_name}|${signer.signer_email}`} id={`client-suggestion-${index}`} role="option"
+            aria-selected={index === active} className={index === active ? 'active' : ''}
+            onMouseDown={e => e.preventDefault()} onClick={() => choose(signer)}>
+            <strong>{signer.client_name}</strong><span>{signer.signer_name}</span><span>{signer.signer_email}</span>
+          </li>)}
+        </ul>}
         {errors[field.key] ? <small className="field-error" id={`${id}-error`}>{errors[field.key]}</small>
           : field.hint && <small className="field-hint" id={`${id}-hint`}>{field.hint}</small>}
       </div>;

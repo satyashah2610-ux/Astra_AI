@@ -90,3 +90,21 @@ test('the status filters fit on one line beside the file list', async ({ page })
   expect(last.y).toBe(first.y);  // one row
   expect(last.x + last.width).toBeLessThanOrEqual(group.x + group.width + 0.5);  // and nothing spills past the column
 });
+
+test('a new file for an earlier client fills the client, signer and email from a pick', async ({ page }) => {
+  const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
+  const agreement = await (await page.request.post('/api/agreements', { multipart: { file: { name: 'Repeat agreement.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
+  const earlier = { title: 'Patel kitchen', client_name: 'Patel Family', signer_name: 'Smit Patel', signer_email: 'smit@example.com', agreement_id: agreement.id };
+  expect((await page.request.post('/api/files', { data: earlier })).status()).toBe(201);
+
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Files' }).click();
+  await page.getByRole('button', { name: 'New file' }).first().click();
+  await page.getByLabel('Client name').fill('pat');
+  await page.getByRole('option', { name: /Patel Family\s*Smit Patel\s*smit@example.com/ }).click();
+  await expect(page.getByLabel('Client name')).toHaveValue('Patel Family');
+  await expect(page.getByLabel('Signer name')).toHaveValue('Smit Patel');
+  await expect(page.getByLabel('Signer email')).toHaveValue('smit@example.com');
+  await expect(page.getByLabel('File name or reference')).toHaveValue('');
+  await page.screenshot({ path: 'test-results/files-earlier-client.png' });
+});

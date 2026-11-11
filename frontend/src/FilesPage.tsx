@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Download, FileSignature, Link2, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import type { Agreement } from './api';
 import FileForm, { type FormAction } from './FileForm';
-import { EVENT_LABELS, fileApi, signingUrl, STATUS_LABELS, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
+import { EVENT_LABELS, fileApi, pastSigners, signingUrl, STATUS_LABELS, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
 
 type Mode = 'view' | 'create' | 'edit';
 type Confirm = null | 'reissue' | 'delete';
@@ -13,6 +13,7 @@ const when = (iso: string | null) => iso ? new Date(iso).toLocaleString(undefine
 /** The Files tab: one file per job; create, send, track and collect the signed agreement. */
 export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   const [files, setFiles] = useState<FileItem[]>([]);
+  const earlierClients = useMemo(() => pastSigners(files), [files]);  // offered when creating a file
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>('view');
@@ -126,7 +127,7 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
       </aside>
 
       <div className="file-detail">
-        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, email) => void submit(values, action, email)} onCancel={() => setMode('view')}
+        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} pastSigners={earlierClients} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, email) => void submit(values, action, email)} onCancel={() => setMode('view')}
           initial={mode === 'edit' && selected ? { title: selected.title, client_name: selected.client_name, signer_name: selected.signer_name, signer_email: selected.signer_email, agreement_id: selected.agreement_id, message: selected.message ?? '' } : undefined} />
         : !selected ? <div className="empty-state files-empty"><span className="large-icon"><FileSignature size={30} /></span><h2>No files yet</h2>
             <p>Create a file for each new job. Astra Sign sends the client your agreement<br />and keeps the signed copy with the file.</p>

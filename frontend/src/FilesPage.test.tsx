@@ -1,6 +1,6 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FilesPage from './FilesPage';
 import type { Agreement } from './api';
 import type { FileItem } from './files';
@@ -401,4 +401,88 @@ it('says reminders follow an emailed link', async () => {
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
   expect(screen.getByText(/reminder every day until/i)).toBeInTheDocument();
+});
+
+describe('filling a new file from an earlier client', () => {
+  beforeEach(() => {
+    files = [makeFile({ title: 'Patel kitchen', client_name: 'Patel Family', signer_name: 'Smit Patel', signer_email: 'smit@gmail.com', status: 'signed' }),
+             makeFile({ title: 'Patel garden', client_name: 'Patel Family', signer_name: 'Riya Patel', signer_email: 'riya@gmail.com', status: 'draft' })];
+  });
+  const openForm = async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await screen.findByText('Patel kitchen');
+    await userEvent.click(screen.getAllByRole('button', { name: 'New file' })[0]);
+  };
+
+  it('typing part of a client name lists every earlier signer; picking one fills the three fields only', async () => {
+    await openForm();
+    await userEvent.type(field('Client name'), 'pat');
+    const options = within(screen.getByRole('listbox', { name: 'Earlier clients' })).getAllByRole('option');
+    expect(options.map(o => o.textContent)).toEqual(['Patel FamilyRiya Patelriya@gmail.com', 'Patel FamilySmit Patelsmit@gmail.com']);
+    await userEvent.click(options[1]);
+    expect(field('Client name')).toHaveValue('Patel Family');
+    expect(field('Signer name')).toHaveValue('Smit Patel');
+    expect(field('Signer email')).toHaveValue('smit@gmail.com');
+    expect(field('File name or reference')).toHaveValue('');  // a new job gets its own name
+    expect(field('Personal message (optional)')).toHaveValue('');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('works from the keyboard, and Enter in the list never sends the file', async () => {
+    await openForm();
+    await userEvent.type(field('Client name'), 'Patel');
+    expect(field('Client name')).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(field('Signer name')).toHaveValue('Smit Patel');
+    expect(requests.some(r => r.method === 'POST')).toBe(false);
+    await userEvent.clear(field('Client name'));
+    await userEvent.type(field('Client name'), 'Pat');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(field('Client name')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('a filled field can be changed, and a new client simply gets no list', async () => {
+    await openForm();
+    await userEvent.type(field('Client name'), 'Pat');
+    await userEvent.click(screen.getAllByRole('option')[0]);
+    await userEvent.clear(field('Signer email'));
+    await userEvent.type(field('Signer email'), 'riya@work.com');
+    expect(field('Signer email')).toHaveValue('riya@work.com');
+    await userEvent.clear(field('Client name'));
+    await userEvent.type(field('Client name'), 'Brand new client');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('a long list can be scrolled with the mouse, and the arrow keys keep the highlighted line in view', async () => {
+    files = Array.from({ length: 12 }, (_, n) => makeFile({ title: `Job ${n}`, client_name: `Patel ${n}`, signer_name: `Signer ${n}`, signer_email: `s${n}@x.co` }));
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    render(<FilesPage agreements={[mind]} />);
+    await screen.findByText('Job 0');
+    await userEvent.click(screen.getAllByRole('button', { name: 'New file' })[0]);
+    await userEvent.type(field('Client name'), 'Patel');
+    const list = screen.getByRole('listbox', { name: 'Earlier clients' });
+    expect(within(list).getAllByRole('option')).toHaveLength(12);  // no limit
+    expect(fireEvent.mouseDown(list)).toBe(false);  // grabbing the scrollbar keeps the box focused, so the list stays open
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(scrolled).toHaveBeenLastCalledWith({ block: 'nearest' });
+    expect(field('Client name')).toHaveAttribute('aria-activedescendant', 'client-suggestion-2');
+  });
+
+  it('the box only points to the list while the list is shown', async () => {
+    await openForm();
+    expect(field('Client name')).not.toHaveAttribute('aria-controls');
+    await userEvent.type(field('Client name'), 'Pat');
+    expect(field('Client name')).toHaveAttribute('aria-controls', 'client-suggestions');
+  });
+
+  it('editing a draft offers no list', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click(await screen.findByRole('button', { name: /^Patel garden/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    await userEvent.clear(field('Client name'));
+    await userEvent.type(field('Client name'), 'Pat');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
 });
