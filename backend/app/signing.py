@@ -35,6 +35,16 @@ def signing_date(utc_offset_minutes: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(minutes=utc_offset_minutes)).strftime("%d %b %Y")
 
 
+def first_open_of_link(db, row, token: str, now: str) -> bool:
+    """Mark this link (the file's current one, or a reminder's) as opened. True only the first time, so reloads add nothing."""
+    token_hash = hash_token(token)
+    if token_hash == row["token_hash"]:
+        result = db.execute("UPDATE files SET link_opened_at = %s WHERE id = %s AND link_opened_at IS NULL", (now, row["id"]))
+    else:
+        result = db.execute("UPDATE signing_links SET opened_at = %s WHERE token_hash = %s AND opened_at IS NULL", (now, token_hash))
+    return result.rowcount == 1
+
+
 def signer_view(row) -> dict:
     """What the signer may see. No email, internal title, IDs or token data."""
     marks = json.loads(row["marks"])
@@ -77,10 +87,12 @@ def create_signing_router(storage: Storage, email_sender=None) -> APIRouter:
         with storage.database() as db:
             write_lock(db)
             row = lookup(db, x_signing_token)
-            if row["status"] == FileStatus.SENT:  # only the first open counts
-                now = utc_now()
-                db.execute("UPDATE files SET status = %s, viewed_at = %s, updated_at = %s, version = version + 1 WHERE id = %s",
-                           (FileStatus.VIEWED, now, now, row["id"]))
+            now = utc_now()
+            # Each link's first open is recorded: the original, a reissued one, or a reminder's. Only the first ever makes the file Viewed.
+            if row["status"] != FileStatus.SIGNED and first_open_of_link(db, row, x_signing_token, now):
+                if row["status"] == FileStatus.SENT:
+                    db.execute("UPDATE files SET status = %s, viewed_at = %s, updated_at = %s, version = version + 1 WHERE id = %s",
+                               (FileStatus.VIEWED, now, now, row["id"]))
                 record_event(db, row["id"], "viewed", request, now)
                 logger.info("File viewed id=%s", row["id"])
             return signer_view(reload(db, row["id"]))

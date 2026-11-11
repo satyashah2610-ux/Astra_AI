@@ -159,7 +159,7 @@ def test_certificate_page_records_the_evidence():
                      "Mozilla/5.0 (Phone)", "file-123", "2026-11-09 11:02:30 UTC"]:
         assert flat(expected) in flat(text), expected
     assert "a" * 64 in flat(text)
-    for label in ["Created", "Sent", "Link reissued", "Viewed", "Signed"]:
+    for label in ["Created", "Sent", "Link reissued", "Opened by signer", "Signed"]:
         assert label in text
     assert len(image_rects(page)) == 1  # the adopted signature is shown on the certificate too
 

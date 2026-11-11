@@ -203,7 +203,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                 raise HTTPException(409, "Send the file first." if current["status"] == FileStatus.DRAFT
                                     else "This file is already signed; its link can no longer be used.")
             now = utc_now()
-            db.execute("UPDATE files SET token_hash = %s, updated_at = %s, version = version + 1 WHERE id = %s",
+            db.execute("UPDATE files SET token_hash = %s, link_opened_at = NULL, updated_at = %s, version = version + 1 WHERE id = %s",
                        (hash_token(token), now, identifier))
             record_event(db, identifier, "link_reissued", at=now)
             email = email_choice(db, options, account)
