@@ -2,16 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Copy, Download, FileSignature, Link2, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Trash2, X } from 'lucide-react';
 import type { Agreement } from './api';
 import FileForm, { type FormAction } from './FileForm';
+import SendCheck from './SendCheck';
 import { EVENT_LABELS, fileApi, pastSigners, signingUrl, STATUS_LABELS, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
 
 type Mode = 'view' | 'create' | 'edit';
-type Confirm = null | 'reissue' | 'delete';
+type Confirm = null | 'send' | 'reissue' | 'delete';
 const FILTERS: ('all' | FileStatus)[] = ['all', 'draft', 'sent', 'viewed', 'signed'];
+const REFRESH_MS = 5000;  // how often an open Files page picks up the signer's progress by itself
 const EMAIL_CHECK_MS = 2500;  // the email goes out after the send answers: look at the timeline again shortly after
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
 /** The Files tab: one file per job; create, send, track and collect the signed agreement. */
-export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
+export default function FilesPage({ agreements, active = true }: { agreements: Agreement[]; active?: boolean }) {
   const [files, setFiles] = useState<FileItem[]>([]);
   const earlierClients = useMemo(() => pastSigners(files), [files]);  // offered when creating a file
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,7 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   const [filter, setFilter] = useState<'all' | FileStatus>('all');
   const [events, setEvents] = useState<FileEvent[]>([]);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const editVersion = useRef(0);  // the version the edit form was opened on: a refresh meanwhile must not hide another tab's change
   const confirmDialog = useRef<HTMLDialogElement>(null);
   const changes = useRef(0);  // bumped by every local change; a refresh that started before one is stale
   const filesRef = useRef(files);
@@ -52,6 +55,14 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
   }, [load]);
+  useEffect(() => {  // while the page is shown, the file list and the open timeline keep themselves up to date
+    if (!active) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void load(); setEventsCheck(n => n + 1);
+    }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [active, load]);
   useEffect(() => {
     if (!selected) { setEvents([]); return; }
     let live = true;
@@ -60,7 +71,7 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   }, [selected?.id, selected?.version, selected?.status, eventsCheck]);
   useEffect(() => () => window.clearTimeout(emailCheck.current), []);
   useEffect(() => { if (confirm) confirmDialog.current?.showModal?.(); }, [confirm]);
-  useEffect(() => { setCopied(false); setEmailLink(true); setMode(current => current === 'edit' ? 'view' : current); }, [selectedId]);
+  useEffect(() => { setCopied(false); setEmailLink(true); setMode(current => current === 'edit' ? 'view' : current); setConfirm(null); }, [selectedId]);  // a dialog never moves to another file
 
   function replace(file: FileItem) { changes.current += 1; setFiles(current => current.some(f => f.id === file.id) ? current.map(f => f.id === file.id ? file : f) : [file, ...current]); }
   function remember({ file, signing_path, email }: SentFile) {
@@ -75,12 +86,12 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
   }
 
   const submit = (values: FileValues, action: FormAction, email: boolean) => run(async () => {
-    if (action === 'save' && selected) { replace(await fileApi.update(selected.id, selected.version, values)); setMode('view'); return; }
+    if (action === 'save' && selected) { replace(await fileApi.update(selected.id, editVersion.current, values)); setMode('view'); return; }
     const created = await fileApi.create(values);
     replace(created); setSelectedId(created.id); setMode('view');
     if (action === 'send') remember(await fileApi.send(created.id, email));
   });
-  const send = () => selected && run(async () => { remember(await fileApi.send(selected.id, emailLink)); });
+  const send = () => selected && run(async () => { setConfirm(null); remember(await fileApi.send(selected.id, emailLink)); });
   const reissue = () => selected && run(async () => { setConfirm(null); remember(await fileApi.reissue(selected.id, emailLink)); });
   const remove = () => selected && run(async () => {
     const id = selected.id;
@@ -149,8 +160,8 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
 
           <div className="file-actions">
             {selected.status === 'draft' && <>
-              <button className="primary" disabled={busy} onClick={() => void send()}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Send for signature</button>
-              <button className="secondary" disabled={busy} onClick={() => { setError(''); setMode('edit'); }}><Pencil size={15} />Edit</button>
+              <button className="primary" disabled={busy} onClick={() => setConfirm('send')}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Send for signature</button>
+              <button className="secondary" disabled={busy} onClick={() => { setError(''); editVersion.current = selected.version; setMode('edit'); }}><Pencil size={15} />Edit</button>
               <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label></>}
             {(selected.status === 'sent' || selected.status === 'viewed') && <button className="secondary" disabled={busy} onClick={() => { setEmailLink(true); setConfirm('reissue'); }}><RotateCcw size={15} />Reissue link</button>}
             {selected.status === 'signed' && <a className="primary" href={fileApi.signedPdfUrl(selected.id)} download><Download size={15} />Download signed PDF</a>}
@@ -177,7 +188,9 @@ export default function FilesPage({ agreements }: { agreements: Agreement[] }) {
       </div>
     </div>
 
-    {confirm && selected && <dialog ref={confirmDialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); if (!busy) setConfirm(null); }} aria-labelledby="file-confirm-title">
+    {confirm === 'send' && selected && <SendCheck values={{ ...selected, message: selected.message ?? '' }} agreementName={agreementName(selected)} emailLink={emailLink} busy={busy}
+      onCancel={() => setConfirm(null)} onConfirm={() => void send()} />}
+    {confirm && confirm !== 'send' && selected && <dialog ref={confirmDialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); if (!busy) setConfirm(null); }} aria-labelledby="file-confirm-title">
       {confirm === 'reissue'
         ? <><h2 id="file-confirm-title">Make a new signing link?</h2><p>The link already sent to {selected.signer_name} will stop working.</p>
           <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the new link to the signer</label></>

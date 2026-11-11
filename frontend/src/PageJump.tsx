@@ -1,0 +1,21 @@
+import { useEffect, useState } from 'react';
+
+/** "Page [n] of N": type a page number and press Enter to go there. Numbers outside the document go to the nearest page. */
+export default function PageJump({ current, total, disabled, onGo }: { current: number; total: number; disabled?: boolean; onGo: (page: number) => void }) {
+  const [typed, setTyped] = useState(String(current));
+  useEffect(() => setTyped(String(current)), [current]);
+
+  function go() {
+    const number = Number.parseInt(typed, 10);
+    if (Number.isNaN(number)) { setTyped(String(current)); return; }
+    const page = Math.min(Math.max(number, 1), total);
+    setTyped(String(page));
+    onGo(page);
+  }
+
+  return <label className="page-jump">Page
+    <input type="number" inputMode="numeric" min={1} max={total} aria-label="Go to page" value={typed} disabled={disabled}
+      onChange={e => setTyped(e.target.value)} onFocus={e => e.target.select()} onBlur={() => setTyped(String(current))}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
+    of {total}</label>;
+}

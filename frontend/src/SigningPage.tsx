@@ -34,6 +34,8 @@ export default function SigningPage({ token }: { token: string }) {
   const [initials, setInitials] = useState<Signature | null>(null);
   const today = formatSigningDate(new Date());  // per render, so a page left open past midnight shows the date the server will print
   const needsInitials = items.some(item => item.type === 'initials');
+  const [boxAt, setBoxAt] = useState(-1);  // the box "Go to signature" last went to
+  const boxes = useMemo(() => [...(view?.marks ?? [])].sort((a, b) => a.page - b.page || a.y - b.y || a.x - b.x), [view?.marks]);
 
   useEffect(() => {
     let live = true;
@@ -80,9 +82,12 @@ export default function SigningPage({ token }: { token: string }) {
   }
   function changeItem(item: SignerItem) { setItems(current => current.map(existing => existing.id === item.id ? item : existing)); }
   function removeItem(id: string) { setItems(current => current.filter(item => item.id !== id)); setSelectedItem(null); }
+  /** Each press goes to the next signature box, top of the document to the bottom, then back to the first. */
   function goToBox() {
-    const first = view?.marks[0];
-    if (first) document.getElementById(`sign-box-${first.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!boxes.length) return;
+    const next = (boxAt + 1) % boxes.length;
+    setBoxAt(next);
+    document.getElementById(`sign-box-${boxes[next].id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   const header = <header className="signing-top"><span className="brand"><span className="brand-icon"><Sparkles size={20} strokeWidth={1.6} /></span>Astra Sign</span><span className="secure-note"><Lock size={13} />Secure signing link</span></header>;
@@ -116,6 +121,7 @@ export default function SigningPage({ token }: { token: string }) {
         <h1>{view.document_name}</h1>
         <p className="signing-intro">Hi {view.signer_name}, please read the agreement and sign below. Your signature will be placed in {oneBox ? 'the highlighted box' : 'the highlighted boxes'}.</p>
         <button className="text-button" onClick={goToBox}><ArrowDown size={14} />Go to signature {oneBox ? 'box' : 'boxes'}</button>
+        {!oneBox && boxAt >= 0 && <span className="box-position" role="status" aria-label="Signature box position">Box {boxAt + 1} of {boxes.length}</span>}
         <div className="field-divider" />
         <label className="form-field"><span>Full name</span><input value={name} onChange={e => setName(e.target.value)} maxLength={200} autoComplete="name" disabled={busy} /></label>
         <SignaturePad name={name} onChange={setSignature} />

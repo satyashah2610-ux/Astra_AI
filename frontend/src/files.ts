@@ -87,7 +87,8 @@ export const fileApi = {
   create: (values: FileValues) => request<FileItem>('/api/files', { method: 'POST', headers: json, body: JSON.stringify(cleanFileValues(values)) }),
   update: (id: string, version: number, changes: Partial<FileValues>) => request<FileItem>(path(id), { method: 'PATCH', headers: json, body: JSON.stringify({ version, ...changes }) }),
   remove: (id: string) => request<void>(path(id), { method: 'DELETE' }),
-  send: (id: string, email: boolean) => request<SentFile>(`${path(id)}/send`, { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
+  // The sender's time zone: the company's Date items print the date on their calendar.
+  send: (id: string, email: boolean) => request<SentFile>(`${path(id)}/send`, { method: 'POST', headers: json, body: JSON.stringify({ email, utc_offset_minutes: -new Date().getTimezoneOffset() }) }),
   reissue: (id: string, email: boolean) => request<SentFile>(`${path(id)}/link`, { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
   events: (id: string) => request<FileEvent[]>(`${path(id)}/events`),
   signedPdfUrl: (id: string) => `${path(id)}/signed.pdf`,

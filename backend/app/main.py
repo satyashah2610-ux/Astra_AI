@@ -18,7 +18,7 @@ from .auth import create_auth
 from .database import clean_database_url, write_lock
 from .email import sender_from_env
 from .events import trusted_proxies
-from .models import SaveMarks
+from .models import RenameAgreement, SaveMarks
 from .files import create_files_router
 from .lifecycle import FileStatus
 from .naming import unique_name
@@ -186,6 +186,22 @@ def create_app(data_dir: Path | None = None, database_url: str | None = None, em
             raise HTTPException(503, "Could not delete the PDF. Close any program using the file and try again.") from exc
         logger.info("Agreement deleted id=%s", identifier)
         return Response(status_code=204)
+
+    @app.patch("/api/agreements/{identifier}")
+    def rename_agreement(identifier: str, body: RenameAgreement, account: dict = Staff):
+        """A taken name (case ignored, this company only) gets " (1)", " (2)"..., like an upload. Marks and version are untouched."""
+        with database() as db:
+            write_lock(db)
+            item(fetch(db, identifier, account["organization_id"]))
+            used = {row["name"].casefold() for row in db.execute("SELECT name FROM agreements WHERE organization_id = %s AND id <> %s",
+                                                                  (account["organization_id"], identifier))}
+            try:
+                db.execute("UPDATE agreements SET name = %s, updated_at = %s WHERE id = %s", (unique_name(body.name, used), utc_now(), identifier))
+            except psycopg.errors.UniqueViolation as exc:
+                raise HTTPException(409, "An agreement with a very similar name already exists. Choose another name.") from exc
+            renamed = item(fetch(db, identifier, account["organization_id"]))
+        logger.info("Agreement renamed id=%s", identifier)
+        return renamed
 
     @app.put("/api/agreements/{identifier}/marks")
     def save_marks(identifier: str, body: SaveMarks, account: dict = Staff):

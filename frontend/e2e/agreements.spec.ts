@@ -73,8 +73,8 @@ test('sample button, unsaved-change guard, multiple pages, keyboard and mobile l
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Select and move fields' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Draw signature', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Add signature box', exact: true })).toHaveCount(1);
-  await page.getByRole('button', { name: 'Add signature box', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Add signature box for client', exact: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Add signature box for client', exact: true }).click();
   const field = page.getByTestId('signature-field');
   await expect(field).toBeFocused();  // a newly added box takes keyboard focus
   const before = (await field.boundingBox())!;
@@ -133,7 +133,7 @@ test('Astra Sign branding and confirmed deletion persist after reload', async ({
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Delete this test agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByRole('heading', { name: 'Delete this test agreement', exact: true })).toBeVisible();
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
-  await page.getByRole('button', { name: 'Add signature box', exact: true }).click();
+  await page.getByRole('button', { name: 'Add signature box for client', exact: true }).click();
   await page.getByRole('button', { name: 'Delete agreement', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Delete this test agreement');
   await expect(page.getByRole('dialog')).toContainText('unsaved changes');

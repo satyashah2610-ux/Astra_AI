@@ -21,6 +21,7 @@ from .models import FileCreate, FileUpdate, SendOptions
 from .reminders import after, record_delivery, reminder_interval
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .signed_pdf import mark_type, print_text_marks
+from .signing import signing_date
 from .storage import Storage, utc_now
 from .tokens import hash_token, new_token
 
@@ -166,7 +167,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                 if not source.is_file():
                     raise HTTPException(422, "The agreement PDF is unavailable. Upload the agreement again.")
                 try:
-                    content = print_text_marks(source.read_bytes(), marks)  # company text becomes part of the document
+                    content = print_text_marks(source.read_bytes(), marks, signing_date(options.utc_offset_minutes if options else 0))  # company items become part of the document
                 except Exception as exc:
                     logger.exception("Company text could not be printed id=%s", identifier)
                     raise HTTPException(422, "The agreement's text could not be printed on the PDF. Check the template and try again.") from exc
@@ -177,7 +178,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                               marks = %s, token_hash = %s, sent_at = %s, updated_at = %s, version = version + 1
                               WHERE id = %s""",
                            (FileStatus.SENT, agreement["name"], hashlib.sha256(content).hexdigest(), agreement["page_count"],
-                            json.dumps([m for m in marks if mark_type(m) != "text"]), hash_token(token), now, now, identifier))
+                            json.dumps([m for m in marks if mark_type(m) in ("signature", "comment")]), hash_token(token), now, now, identifier))
                 record_event(db, identifier, "sent", at=now)
                 email = email_choice(db, options, account)
                 schedule_reminders(db, identifier, email, account, base_url)

@@ -17,6 +17,8 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .signatures import decode_signature_png
+
 EVENT_LABELS = {"created": "Created", "sent": "Sent", "link_reissued": "Link reissued", "viewed": "Viewed", "signed": "Signed",
                 "email_sent": "Email sent", "email_failed": "Email not delivered", "reminder_sent": "Reminder sent",
                 "reminder_failed": "Reminder not delivered", "signed_notice_sent": "Company notified",
@@ -196,10 +198,27 @@ def apply_stamps(writer: PdfWriter, stamps: list[Stamp]) -> None:
             stamp_page(page, on_page)
 
 
-def print_text_marks(original: bytes, marks: list) -> bytes:
-    """The document as sent: company text printed onto it. Comments and signature boxes are not printed."""
-    stamps = [Stamp(kind="text", page=mark["page"], box=mark, text=mark["text"], ink=COMPANY_INK)
-              for mark in marks if mark_type(mark) == "text"]
+def company_stamps(marks: list, date_text: str) -> list[Stamp]:
+    """What the company filled in on the template. Comments and the client's signature boxes are not printed."""
+    stamps, images = [], {}  # each adopted image decoded once, however many pages carry it
+    for mark in marks:
+        kind, box = mark_type(mark), dict(page=mark["page"], box=mark, ink=COMPANY_INK)
+        if kind in ("text", "name"):
+            stamps.append(Stamp(kind="text", text=mark["text"], **box))
+        elif kind == "date":
+            stamps.append(Stamp(kind="text", text=date_text, **box))
+        elif kind in ("check", "dot"):
+            stamps.append(Stamp(kind=kind, **box))
+        elif kind in ("initials", "company_signature"):
+            if mark["image"] not in images:
+                images[mark["image"]] = decode_signature_png(mark["image"])
+            stamps.append(Stamp(kind="image", image=images[mark["image"]], **box))
+    return stamps
+
+
+def print_text_marks(original: bytes, marks: list, date_text: str = "") -> bytes:
+    """The document as sent: the company's items (text, name, date, ticks, initials, signature) printed onto it."""
+    stamps = company_stamps(marks, date_text)
     if not stamps:
         return original
     writer = PdfWriter()

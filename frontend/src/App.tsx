@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, CheckCircle2, FileSignature, FileText, Loader2, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
+import { Check, CheckCircle2, FileSignature, FileText, Loader2, Pencil, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { request, type Agreement, type Mark } from './api';
 import PdfEditor from './PdfEditor';
 import FilesPage from './FilesPage';
@@ -7,8 +7,12 @@ import AccountMenu from './AccountMenu';
 import { isSignatureMark } from './items';
 import type { Account } from './auth';
 
+type Tab = 'agreements' | 'files';
+
 export default function App({ account, onLogout, onAccountDeleted }: { account: Account; onLogout: () => void; onAccountDeleted: () => void }) {
-  const [tab, setTab] = useState<'agreements' | 'files'>('agreements');
+  const [tab, setTabState] = useState<Tab>(() => window.location.pathname === '/files' ? 'files' : 'agreements');
+  /** The tab is kept in the address, so a refresh opens the same page. */
+  function setTab(next: Tab) { setTabState(next); window.history.replaceState(null, '', `/${next}`); }
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [active, setActive] = useState<Agreement | null>(null);
   const [marks, setMarks] = useState<Mark[]>([]);
@@ -20,6 +24,8 @@ export default function App({ account, onLogout, onAccountDeleted }: { account: 
   const [confirm, setConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Agreement | null>(null);
   const [deleteError, setDeleteError] = useState('');
+  const [renaming, setRenaming] = useState<string | null>(null);  // the name being typed, while renaming
+  const cancelRename = useRef(false);  // Escape: the blur that follows must not save
   const deleteDialog = useRef<HTMLDialogElement>(null);
   const pending = useRef<() => void>(() => {});
   const input = useRef<HTMLInputElement>(null);
@@ -27,7 +33,7 @@ export default function App({ account, onLogout, onAccountDeleted }: { account: 
   const dirty = !!active && JSON.stringify(marks) !== JSON.stringify(active.marks);
   const signatureCount = marks.filter(isSignatureMark).length;
 
-  function select(item: Agreement) { setActive(item); setMarks(item.marks); setError(''); }
+  function select(item: Agreement) { setActive(item); setMarks(item.marks); setError(''); setRenaming(null); }
   async function load() {
     setLoading(true); setError('');
     try {
@@ -82,6 +88,19 @@ export default function App({ account, onLogout, onAccountDeleted }: { account: 
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
+  /** Rename only: unsaved boxes stay as they are. A taken name comes back numbered, e.g. "Services (1)". */
+  async function rename() {
+    const name = renaming?.trim();
+    setRenaming(null);
+    if (!active || !name || name === active.name) return;
+    setBusy(true); setError('');
+    try {
+      const item = await request<Agreement>(`/api/agreements/${active.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      setAgreements(current => current.map(a => a.id === item.id ? { ...a, name: item.name } : a));
+      setActive(current => current && current.id === item.id ? { ...current, name: item.name } : current);
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
   async function deleteAgreement() {
     if (!deleteTarget || busy) return;
     setBusy(true); setDeleteError('');
@@ -113,7 +132,7 @@ export default function App({ account, onLogout, onAccountDeleted }: { account: 
       <input ref={input} className="sr-only" tabIndex={-1} type="file" accept="application/pdf,.pdf" aria-label="Upload PDF file" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) guard(() => void upload(file)); }} />
       {error && <div className="error-banner" role="alert"><span>{error}</span><div>{error.includes('another tab') && <button onClick={() => guard(() => { void load(); })}>Reload saved version</button>}{error.includes('server') && <button onClick={() => guard(() => { void load(); })}>Retry</button>}<button aria-label="Dismiss error" onClick={() => setError('')}><X size={16} /></button></div></div>}
       {/* Files stays mounted while hidden, so a just-shown signing link and any work in progress survive a tab switch. */}
-      <div hidden={tab !== 'files'}><FilesPage agreements={agreements} /></div>
+      <div hidden={tab !== 'files'}><FilesPage agreements={agreements} active={tab === 'files'} /></div>
       {tab === 'files' ? null : <section className="workspace">
         <aside className="library">
           <div className="library-title"><h2>Your agreements</h2><span className="count">{agreements.length}</span></div>
@@ -123,7 +142,7 @@ export default function App({ account, onLogout, onAccountDeleted }: { account: 
           <div className="library-tip"><p>No document handy? Try the editor on a sample.</p><button className="text-button" disabled={busy || loading} onClick={() => guard(() => void sample())}>Try a sample agreement</button></div>
         </aside>
         <div className="editor-panel">
-          {active ? <><div className="editor-heading"><div><h2>{active.name}</h2><div className="editor-meta"><span>{active.page_count} pages</span><span>{signatureCount} signature {signatureCount === 1 ? 'field' : 'fields'}</span><span className={`save-status ${dirty ? 'unsaved' : ''}`} role="status">{dirty ? <span className="status-dot" /> : <Check size={13} />}{dirty ? 'Unsaved changes' : 'All changes saved'}</span></div></div><div className="editor-actions"><button className="delete-agreement" disabled={busy} onClick={() => { setDeleteError(''); setError(''); setDeleteTarget(active); }}><Trash2 size={15} />Delete agreement</button><button className="primary save" disabled={busy || !dirty} onClick={() => void save()}>{busy ? <Loader2 className="spin" size={16} /> : <Check size={16} />}Save template</button></div></div><PdfEditor key={active.id} agreement={active} marks={marks} onChange={setMarks} disabled={busy} /></> : <div className="empty-state"><div className="empty-illustration"><div className="paper back" /><div className="paper front"><FileText size={28} strokeWidth={1.4} /><i /><i /><i /><div className="illustration-signature">Your signature</div></div><span className="floating-check"><Check size={20} /></span></div><h2>Your first agreement starts here</h2><p>Upload a PDF, mark where your client should sign,<br />and save it as a template you can use again.</p><button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}><Upload size={16} />Upload your first PDF</button><button className="text-button" disabled={busy || loading} onClick={() => void sample()}>Or explore a sample agreement</button><div className="empty-steps"><span><span>1</span>Upload PDF</span><span><span>2</span>Place signatures</span><span><span>3</span>Save template</span></div></div>}
+          {active ? <><div className="editor-heading"><div>{renaming !== null ? <input className="rename-input" aria-label="Agreement name" autoFocus value={renaming} maxLength={200} onChange={e => setRenaming(e.target.value)} onFocus={e => e.target.select()} onBlur={() => { if (cancelRename.current) cancelRename.current = false; else void rename(); }} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } else if (e.key === 'Escape') { e.preventDefault(); cancelRename.current = true; setRenaming(null); } }} /> : <div className="agreement-title"><h2>{active.name}</h2><button className="icon-button" aria-label="Rename agreement" title="Rename agreement" disabled={busy} onClick={() => setRenaming(active.name)}><Pencil size={15} /></button></div>}<div className="editor-meta"><span>{active.page_count} pages</span><span>{signatureCount} signature {signatureCount === 1 ? 'field' : 'fields'}</span><span className={`save-status ${dirty ? 'unsaved' : ''}`} role="status">{dirty ? <span className="status-dot" /> : <Check size={13} />}{dirty ? 'Unsaved changes' : 'All changes saved'}</span></div></div><div className="editor-actions"><button className="delete-agreement" disabled={busy} onClick={() => { setDeleteError(''); setError(''); setDeleteTarget(active); }}><Trash2 size={15} />Delete agreement</button><button className="primary save" disabled={busy || !dirty} onClick={() => void save()}>{busy ? <Loader2 className="spin" size={16} /> : <Check size={16} />}Save template</button></div></div><PdfEditor key={active.id} agreement={active} marks={marks} onChange={setMarks} disabled={busy} signerName={account.user.name} /></> : <div className="empty-state"><div className="empty-illustration"><div className="paper back" /><div className="paper front"><FileText size={28} strokeWidth={1.4} /><i /><i /><i /><div className="illustration-signature">Your signature</div></div><span className="floating-check"><Check size={20} /></span></div><h2>Your first agreement starts here</h2><p>Upload a PDF, mark where your client should sign,<br />and save it as a template you can use again.</p><button className="primary" disabled={busy || loading} onClick={() => input.current?.click()}><Upload size={16} />Upload your first PDF</button><button className="text-button" disabled={busy || loading} onClick={() => void sample()}>Or explore a sample agreement</button><div className="empty-steps"><span><span>1</span>Upload PDF</span><span><span>2</span>Place signatures</span><span><span>3</span>Save template</span></div></div>}
         </div>
       </section>}
     </main>

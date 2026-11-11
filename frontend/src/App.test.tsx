@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 vi.mock('./PdfEditor', () => ({ default: ({ onChange, marks }: any) => <button onClick={() => onChange([...marks, { id: 'test-field', page: 1, x: .1, y: .6, width: .3, height: .1 }])}>Draw test field</button> }));
@@ -13,6 +13,7 @@ let sentFiles: any[];
 let failSave: boolean;
 let failDelete: boolean;
 beforeEach(() => {
+  window.history.replaceState(null, '', '/');  // the open tab is kept in the address
   records = [];
   sentFiles = [];
   failSave = false;
@@ -33,6 +34,7 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (options?.method === 'POST') { records.push({ ...agreement }); return new Response(JSON.stringify(agreement), { status: 201 }); }
+    if (options?.method === 'PATCH') { const { name } = JSON.parse(options.body as string); records[0] = { ...records[0], name: name === 'Services' ? 'Services (1)' : name }; return new Response(JSON.stringify(records[0])); }  // as if 'Services' were taken
     if (options?.method === 'PUT') {
       if (failSave) return new Response(JSON.stringify({ detail: 'Could not save. Try again.' }), { status: 500 });
       const data = JSON.parse(options.body as string);
@@ -154,6 +156,7 @@ it('keeps the once-only signing link when staff switch to Agreements and back', 
   await userEvent.type(screen.getByLabelText('Signer name'), 'Jordan Smith');
   await userEvent.type(screen.getByLabelText('Signer email'), 'jordan@example.com');
   await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${window.location.origin}/sign#secret-shown-once`);
   await userEvent.click(screen.getByRole('tab', { name: /Agreements/ }));
   await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
@@ -187,4 +190,44 @@ it('shows who is signed in and logs out from the header', async () => {
   await userEvent.click(avatar);
   await userEvent.click(screen.getByRole('menuitem', { name: 'Log out' }));
   expect(onLogout).toHaveBeenCalled();
+});
+
+describe('a refresh stays on the same page', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it('opens the page named in the address', async () => {
+    window.history.replaceState(null, '', '/files');
+    render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
+    expect(screen.getByRole('tab', { name: /Files/ })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('No files yet')).toBeInTheDocument();
+  });
+
+  it('switching tabs updates the address, so a refresh comes back to it', async () => {
+    render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
+    await screen.findByText('Your first agreement starts here');
+    await userEvent.click(screen.getByRole('tab', { name: /Files/ }));
+    expect(window.location.pathname).toBe('/files');
+    await userEvent.click(screen.getByRole('tab', { name: /Agreements/ }));
+    expect(window.location.pathname).toBe('/agreements');
+  });
+});
+
+it('renames the agreement; a taken name comes back numbered and unsaved boxes are kept', async () => {
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
+  await screen.findByText('Your first agreement starts here');
+  fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['%PDF'], 'Consulting agreement.pdf', { type: 'application/pdf' })] } });
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  await userEvent.click(screen.getByRole('button', { name: 'Draw test field' }));  // unsaved
+  await userEvent.click(screen.getByRole('button', { name: 'Rename agreement' }));
+  const box = screen.getByRole('textbox', { name: 'Agreement name' });
+  await userEvent.clear(box);
+  await userEvent.type(box, 'Services{Enter}');
+  expect(await screen.findByRole('heading', { name: 'Services (1)' })).toBeInTheDocument();
+  expect(within(screen.getByLabelText('Agreement library')).getByText('Services (1)')).toBeInTheDocument();
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Rename agreement' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Agreement name' }), ' draft{Escape}');
+  expect(screen.getByRole('heading', { name: 'Services (1)' })).toBeInTheDocument();  // Escape cancels
+  expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1);  // saved once, not again on blur
 });
