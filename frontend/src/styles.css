@@ -547,3 +547,6 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 .send-check-details dd { margin: 0; font-size: 14px; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .box-position { margin-left: 8px; font-size: 12px; color: var(--muted); }
+
+.agreement-title { display: flex; align-items: center; gap: 6px; }
+.rename-input { width: min(420px, 100%); height: 34px; padding: 0 10px; border: 1px solid var(--green-line); border-radius: 6px; font: inherit; font-size: 20px; font-weight: 600; color: var(--ink); }

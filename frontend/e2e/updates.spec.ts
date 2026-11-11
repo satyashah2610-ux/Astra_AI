@@ -17,7 +17,7 @@ test('the company signs its side, checks the details, and watches the client sig
   await jump.fill('2');
   await jump.press('Enter');
   await expect(page.getByLabel('PDF page 2')).toBeVisible();
-  await page.getByRole('button', { name: 'Add signature box' }).click();
+  await page.getByRole('button', { name: 'Add signature box for client' }).click();
   await page.getByRole('button', { name: 'Tick', exact: true }).click();
   await page.getByRole('button', { name: 'Date', exact: true }).click();
   await page.getByRole('button', { name: 'Signature', exact: true }).click();
@@ -67,4 +67,19 @@ test('the company signs its side, checks the details, and watches the client sig
   await expect(page.getByTestId('file-status')).toHaveText('Signed', { timeout: 15000 });
   await expect(page.getByRole('list', { name: 'Timeline' })).toContainText('Signed', { timeout: 15000 });
   expect(errors).toEqual([]);
+});
+
+test('an agreement can be renamed; a taken name gets a number', async ({ page }) => {
+  await page.goto('/');
+  const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
+  await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Services.pdf', mimeType: 'application/pdf', buffer: pdf });
+  await expect(page.getByRole('heading', { name: 'Services', exact: true })).toBeVisible();
+  await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Other.pdf', mimeType: 'application/pdf', buffer: pdf });
+  await expect(page.getByRole('heading', { name: 'Other', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Rename agreement' }).click();
+  await page.getByRole('textbox', { name: 'Agreement name' }).fill('Services');
+  await page.getByRole('textbox', { name: 'Agreement name' }).press('Enter');
+  await expect(page.getByRole('heading', { name: 'Services (1)', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Agreement library')).toContainText('Services (1)');
 });

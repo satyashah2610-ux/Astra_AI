@@ -48,7 +48,7 @@ it('clicking a box focuses it, so arrow keys move it straight away', async () =>
 
 it('a newly added box is focused, so arrow keys move it without clicking it first', async () => {
   render(<Harness initial={[]} />);
-  await userEvent.click(await screen.findByRole('button', { name: 'Add signature box' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Add signature box for client' }));
   const field = await screen.findByTestId('signature-field');
   expect(field).toHaveFocus();
   const before = latest[0].y;
@@ -91,7 +91,7 @@ it('adds company text and a comment, and edits what they say', async () => {
 
 it('keeps new signature boxes in the original shape, with no type', async () => {
   render(<Harness initial={[]} />);
-  await userEvent.click(await screen.findByRole('button', { name: 'Add signature box' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Add signature box for client' }));
   expect(latest[0]).not.toHaveProperty('type');
   expect(latest[0]).not.toHaveProperty('text');
 });
@@ -152,4 +152,11 @@ it('a name the PDF cannot print is not prefilled, so the template can still be s
   render(<Harness initial={[]} signerName="Ołeksandr 李" />);
   await userEvent.click(await screen.findByRole('button', { name: 'Name' }));
   expect(latest[0].text).toBe('Your name');
+});
+
+it('labels the client’s box clearly and shows the company tools without a "You sign" label', async () => {
+  render(<Harness initial={[]} />);
+  expect(await screen.findByRole('button', { name: 'Add signature box for client' })).toBeInTheDocument();
+  expect(screen.queryByText('You sign')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Tick' })).toBeInTheDocument();
 });

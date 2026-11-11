@@ -93,6 +93,11 @@ Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=
 Message = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000), AfterValidator(no_nul), AfterValidator(lambda text: text or None)]
 
 
+class RenameAgreement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: Name
+
+
 class FileCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: Name

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -34,6 +34,7 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (options?.method === 'POST') { records.push({ ...agreement }); return new Response(JSON.stringify(agreement), { status: 201 }); }
+    if (options?.method === 'PATCH') { const { name } = JSON.parse(options.body as string); records[0] = { ...records[0], name: name === 'Services' ? 'Services (1)' : name }; return new Response(JSON.stringify(records[0])); }  // as if 'Services' were taken
     if (options?.method === 'PUT') {
       if (failSave) return new Response(JSON.stringify({ detail: 'Could not save. Try again.' }), { status: 500 });
       const data = JSON.parse(options.body as string);
@@ -209,4 +210,24 @@ describe('a refresh stays on the same page', () => {
     await userEvent.click(screen.getByRole('tab', { name: /Agreements/ }));
     expect(window.location.pathname).toBe('/agreements');
   });
+});
+
+it('renames the agreement; a taken name comes back numbered and unsaved boxes are kept', async () => {
+  render(<App account={account} onLogout={onLogout} onAccountDeleted={vi.fn()} />);
+  await screen.findByText('Your first agreement starts here');
+  fireEvent.change(screen.getByLabelText('Upload PDF file'), { target: { files: [new File(['%PDF'], 'Consulting agreement.pdf', { type: 'application/pdf' })] } });
+  await screen.findByRole('heading', { name: 'Consulting agreement' });
+  await userEvent.click(screen.getByRole('button', { name: 'Draw test field' }));  // unsaved
+  await userEvent.click(screen.getByRole('button', { name: 'Rename agreement' }));
+  const box = screen.getByRole('textbox', { name: 'Agreement name' });
+  await userEvent.clear(box);
+  await userEvent.type(box, 'Services{Enter}');
+  expect(await screen.findByRole('heading', { name: 'Services (1)' })).toBeInTheDocument();
+  expect(within(screen.getByLabelText('Agreement library')).getByText('Services (1)')).toBeInTheDocument();
+  expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Rename agreement' }));
+  await userEvent.type(screen.getByRole('textbox', { name: 'Agreement name' }), ' draft{Escape}');
+  expect(screen.getByRole('heading', { name: 'Services (1)' })).toBeInTheDocument();  // Escape cancels
+  expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === 'PATCH')).toHaveLength(1);  // saved once, not again on blur
 });

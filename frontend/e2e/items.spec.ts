@@ -30,7 +30,7 @@ test('staff add text and a comment; the client places ticks, dots, text, name, d
   await page.getByLabel('Comment for the client').fill('Tick the plan you want');
   await page.getByRole('button', { name: 'Next page' }).click();
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
-  await page.getByRole('button', { name: 'Add signature box' }).click();
+  await page.getByRole('button', { name: 'Add signature box for client' }).click();
   await page.getByRole('button', { name: 'Save template', exact: true }).click();
   await expect(page.getByText('All changes saved')).toBeVisible();
   await expect(page.getByText('1 signature field')).toBeVisible();
