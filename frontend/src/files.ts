@@ -30,6 +30,29 @@ export function signingUrl(origin: string, signingPath: string): string {
   return origin.replace(/\/+$/, '') + signingPath;
 }
 
+/** A client and signer from an earlier file, offered when creating a new one. */
+export type PastSigner = Pick<FileItem, 'client_name' | 'signer_name' | 'signer_email'>;
+
+/** Each client, signer and email from the company's files once (case ignored in all three), newest first; drafts included. */
+export function pastSigners(files: FileItem[]): PastSigner[] {
+  const seen = new Set<string>();
+  const result: PastSigner[] = [];
+  for (const file of [...files].sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+    const key = [file.client_name, file.signer_name, file.signer_email].map(part => part.trim().toLowerCase()).join('\u0000');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ client_name: file.client_name, signer_name: file.signer_name, signer_email: file.signer_email });
+  }
+  return result;
+}
+
+/** Earlier clients whose client or signer name contains what was typed (case ignored). Nothing for an empty box; no limit. */
+export function matchSigners(signers: PastSigner[], typed: string): PastSigner[] {
+  const query = typed.trim().toLowerCase();
+  if (!query) return [];
+  return signers.filter(s => s.client_name.toLowerCase().includes(query) || s.signer_name.toLowerCase().includes(query));
+}
+
 /** An agreement can be sent only once it has at least one signature box. */
 export function sendable(agreement: Agreement): boolean {
   return agreement.marks.some(isSignatureMark);

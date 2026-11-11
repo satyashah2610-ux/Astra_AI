@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EVENT_LABELS, fileApi, sendable, signingUrl, STATUS_LABELS, validateFile, type FileValues } from './files';
+import { EVENT_LABELS, fileApi, matchSigners, pastSigners, sendable, signingUrl, STATUS_LABELS, validateFile, type FileItem, type FileValues } from './files';
 import type { Agreement } from './api';
 
 const agreement = (marks = 1): Agreement => ({ id: 'a1', name: 'MIND agreement', filename: 'MIND.pdf', page_count: 2, version: 1, created_at: '', updated_at: '',
@@ -96,5 +96,40 @@ describe('an expired session', () => {
     await expect(fileApi.list()).rejects.toThrow('Log in to continue.');
     expect(heard).toHaveBeenCalledTimes(1);
     window.removeEventListener(LOGGED_OUT_EVENT, heard);
+  });
+});
+
+describe('past clients for the new-file form', () => {
+  const file = (client_name: string, signer_name: string, signer_email: string, created_at: string, status: FileItem['status'] = 'sent'): FileItem => ({
+    id: created_at, title: 'job', client_name, signer_name, signer_email, agreement_id: 'a1', message: null, status, document_name: null, document_sha256: null,
+    page_count: null, version: 0, created_at, updated_at: created_at, sent_at: null, viewed_at: null, signed_at: null, field_count: 0, reminders_sent: 0, next_reminder_at: null });
+  const files = [
+    file('Patel Family', 'Smit Patel', 'smit@gmail.com', '2026-10-01T10:00:00+00:00', 'signed'),
+    file('Patel Family', 'Smit Patel', 'SMIT@gmail.com', '2026-10-05T10:00:00+00:00'),  // same person: one line
+    file('Patel Family', 'Riya Patel', 'riya@gmail.com', '2026-10-10T10:00:00+00:00', 'draft'),  // drafts count
+    file('Patel Family', 'Smit Patel', 'smit@patelco.com', '2026-11-01T10:00:00+00:00'),  // a new email: its own line
+    file('Smith Family', 'Jordan Smith', 'jordan@example.com', '2026-09-01T10:00:00+00:00'),
+  ];
+
+  it('lists each client, signer and email once, newest first, drafts included', () => {
+    expect(pastSigners(files)).toEqual([
+      { client_name: 'Patel Family', signer_name: 'Smit Patel', signer_email: 'smit@patelco.com' },
+      { client_name: 'Patel Family', signer_name: 'Riya Patel', signer_email: 'riya@gmail.com' },
+      { client_name: 'Patel Family', signer_name: 'Smit Patel', signer_email: 'SMIT@gmail.com' },
+      { client_name: 'Smith Family', signer_name: 'Jordan Smith', signer_email: 'jordan@example.com' },
+    ]);
+  });
+
+  it('matches what is typed in the client or signer name, ignoring case', () => {
+    const all = pastSigners(files);
+    expect(matchSigners(all, 'pat').map(s => s.signer_email)).toEqual(['smit@patelco.com', 'riya@gmail.com', 'SMIT@gmail.com']);
+    expect(matchSigners(all, '  JORDAN ').map(s => s.client_name)).toEqual(['Smith Family']);
+    expect(matchSigners(all, '')).toEqual([]);
+    expect(matchSigners(all, 'nobody')).toEqual([]);
+  });
+
+  it('has no limit on how many it lists', () => {
+    const many = Array.from({ length: 30 }, (_, n) => file(`Client ${n}`, `Signer ${n}`, `s${n}@x.co`, `2026-10-${String(n + 1).padStart(2, '0')}T10:00:00+00:00`));
+    expect(matchSigners(pastSigners(many), 'client')).toHaveLength(30);
   });
 });
