@@ -9,7 +9,7 @@ import { pointerCapture, TestPointerEvent } from './test-utils';
 // A fake one-page PDF that "renders" instantly, so the editor becomes ready in jsdom.
 vi.mock('./pdfjs', () => ({ PDF_OPTIONS: {} }));
 vi.mock('./SignaturePad', () => ({
-  default: ({ onChange, label }: any) => <button onClick={() => onChange({ method: 'drawn', image: `data:image/png;base64,${(label ?? 'signature').toUpperCase()}` })}>Provide {label ?? 'signature'}</button>,
+  default: ({ onChange, label, name }: any) => <><span>Pad shows: {name}</span><button onClick={() => onChange({ method: 'drawn', image: `data:image/png;base64,${(label ?? 'signature').toUpperCase()}` })}>Provide {label ?? 'signature'}</button></>,
 }));
 vi.mock('pdfjs-dist', () => {
   const page = { getViewport: () => ({ width: 612, height: 792 }), render: () => ({ promise: Promise.resolve(), cancel() {} }) };
@@ -136,6 +136,21 @@ describe('the company fills in and signs its side', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Provide initials' }));
     await userEvent.click(screen.getByRole('button', { name: 'Place on the page' }));
     expect(latest).toEqual([expect.objectContaining({ type: 'initials', image: 'data:image/png;base64,INITIALS' })]);
+  });
+
+  it('the signature starts from the sign-up name, and staff can type their own name instead', async () => {
+    render(<Harness initial={[]} signerName="Alex Morgan" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Signature' }));
+    const name = screen.getByRole('textbox', { name: 'Your full name' });
+    expect(name).toHaveValue('Alex Morgan');
+    expect(screen.getByText('Pad shows: Alex Morgan')).toBeInTheDocument();
+    await userEvent.clear(name);
+    await userEvent.type(name, 'Satya Shah');
+    expect(screen.getByText('Pad shows: Satya Shah')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Initials' }));  // the typed name carries over to the initials
+    expect(screen.getByRole('textbox', { name: 'Your full name' })).toHaveValue('Satya Shah');
+    expect(screen.getByText('Pad shows: SS')).toBeInTheDocument();
   });
 
   it('cancelling the adoption places nothing', async () => {

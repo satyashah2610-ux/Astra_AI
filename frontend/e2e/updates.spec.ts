@@ -125,8 +125,13 @@ test('the signing page: the page box sits beside the tools, and a long name fits
   await client.goto(link);
   await expect(client.getByRole('region', { name: /^Page 1 of/ })).toBeVisible();
   const jump = (await client.getByRole('spinbutton', { name: 'Go to page' }).boundingBox())!;
-  for (const button of await client.getByRole('toolbar', { name: 'Add to the document' }).getByRole('button').all())
-    expect(overlaps(jump, (await button.boundingBox())!)).toBe(false);
+  const tops = new Set<number>();
+  for (const button of await client.getByRole('toolbar', { name: 'Add to the document' }).getByRole('button').all()) {
+    const place = (await button.boundingBox())!;
+    expect(overlaps(jump, place)).toBe(false);
+    tops.add(Math.round(place.y));
+  }
+  expect(tops.size).toBe(1);  // every tool, Signature included, on one line
 
   await client.getByLabel('Full name').fill('Satya Shah Venkataraman Subramaniam');
   const preview = client.getByLabel('Signature preview');
