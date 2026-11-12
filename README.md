@@ -301,6 +301,13 @@ The app runs on **Render** as one Docker container, with a persistent disk for f
    - **Why it waits:** it depends on the same AI and data-privacy decisions as point 1, and the core signing flow came first.
 4. **Load testing.** How the app behaves with, say, 1,000 people at once was not tested. The database is on Neon's free tier, and a realistic load test would use much of its monthly compute allowance and could take the live app offline. Before a real launch, load tests would run on a separate paid staging copy.
 5. **Team features.** Inviting colleagues to a company account, and roles, are not built yet. Each company currently has one login.
+6. **Payments and subscriptions (Stripe).** If the app is taken further, billing would be a subscription model on Stripe:
+   - plans per company (for example Free, Pro and Business), monthly or yearly, with a free trial;
+   - plan limits, such as agreements sent per month, staff users and templates;
+   - Stripe Checkout to pay, and the Stripe Customer Portal to upgrade, downgrade, change card or cancel;
+   - Stripe webhooks to keep each company's plan status up to date.
+
+   Card details would stay with Stripe and never be stored in the app. It was left out because pricing isn't decided yet and the core signing product came first.
 
 ## Limits
 
