@@ -82,13 +82,16 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
             return "not_configured"
         return "sending" if take_email_slot(db, account["organization_id"]) else "limit_reached"
 
-    def schedule_reminders(db, identifier: str, email: str, account: dict, base_url: str) -> None:
-        """After a send or reissue: earlier reminder links stop working; an emailed link gets up to MAX_REMINDERS reminders."""
+    def schedule_reminders(db, identifier: str, remind: bool, account: dict, base_url: str) -> None:
+        """After a send or reissue: earlier reminder links stop working; with `remind`, up to MAX_REMINDERS reminders follow."""
         db.execute("DELETE FROM signing_links WHERE file_id = %s", (identifier,))
-        emailed = email == "sending"
         db.execute("UPDATE files SET remind_at = %s, reminders_left = %s, sent_by = %s, link_base = %s WHERE id = %s",
-                   (after(reminder_interval()) if emailed else None, MAX_REMINDERS if emailed else 0,
+                   (after(reminder_interval()) if remind else None, MAX_REMINDERS if remind else 0,
                     account["user_id"], base_url, identifier))
+
+    def wants_reminders(email: str, options: SendOptions | None) -> bool:
+        """Reminders follow only an emailed link, and only if staff left them on."""
+        return email == "sending" and (options is None or options.reminders)
 
     @router.post("", status_code=201)
     def create_file(body: FileCreate, account: dict = Staff):
@@ -181,9 +184,9 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                               WHERE id = %s""",
                            (FileStatus.SENT, agreement["name"], hashlib.sha256(content).hexdigest(), agreement["page_count"],
                             json.dumps([m for m in marks if mark_type(m) in ("signature", "comment")]), hash_token(token), now, now, identifier))
-                record_event(db, identifier, "sent", at=now)
                 email = email_choice(db, options, account)
-                schedule_reminders(db, identifier, email, account, base_url)
+                record_event(db, identifier, "sent" if email == "sending" else "link_created", at=now)  # emailed, or for staff to share
+                schedule_reminders(db, identifier, wants_reminders(email, options), account, base_url)
                 sent = public_file(fetch(db, identifier, account["organization_id"]))
         except BaseException:
             if written:
@@ -209,7 +212,7 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
                        (hash_token(token), now, identifier))
             record_event(db, identifier, "link_reissued", at=now)
             email = email_choice(db, options, account)
-            schedule_reminders(db, identifier, email, account, base_url)
+            schedule_reminders(db, identifier, wants_reminders(email, options), account, base_url)
             reissued = public_file(fetch(db, identifier, account["organization_id"]))
         logger.info("File link reissued id=%s", identifier)
         if email == "sending":

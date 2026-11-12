@@ -96,6 +96,6 @@ def test_files_already_being_reminded_get_what_is_left_of_seven_for_their_curren
                 connection.execute("INSERT INTO file_events (file_id, type, at) VALUES (%s, %s, 'now')", (file_id, event))
         connection.commit()
         monkeypatch.setattr(migrations, "MIGRATIONS_DIR", real)
-        assert migrations.migrate(connection) == ["0010_reminder_limit"]
+        assert migrations.migrate(connection)[0] == "0010_reminder_limit"  # later migrations follow it
         left = {r[0]: (r[1], r[2]) for r in connection.execute("SELECT id, reminders_left, remind_at FROM files")}
     assert left == {"reissued": (6, "2026-01-01"), "failures": (0, None), "fresh": (7, "2026-01-01")}

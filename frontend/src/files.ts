@@ -12,11 +12,14 @@ export type FileValues = Pick<FileItem, 'title' | 'client_name' | 'signer_name' 
 export type FileEvent = { type: keyof typeof EVENT_LABELS; at: string; ip: string | null; user_agent: string | null; detail: string | null };
 /** What happened to the signing email: queued, turned off by staff, email isn't set up, or the company's daily limit is used up. */
 export type EmailResult = 'sending' | 'off' | 'not_configured' | 'limit_reached';
+/** How the link reaches the client: emailed by the app (with or without daily reminders), or shared by staff. */
+export type Delivery = { email: boolean; reminders: boolean };
+export const DEFAULT_DELIVERY: Delivery = { email: true, reminders: true };
 export type SentFile = { file: FileItem; signing_path: string; email: EmailResult };
 export type FieldErrors = Partial<Record<keyof FileValues, string>>;
 
 export const STATUS_LABELS: Record<FileStatus, string> = { draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' };
-export const EVENT_LABELS = { created: 'Created', sent: 'Sent', link_reissued: 'Link reissued', viewed: 'Opened by signer', signed: 'Signed', email_sent: 'Email sent', email_failed: 'Email not delivered',
+export const EVENT_LABELS = { created: 'Created', sent: 'Sent by email', link_created: 'Link created, not emailed', link_reissued: 'Link reissued', viewed: 'Opened by signer', signed: 'Signed', email_sent: 'Email sent', email_failed: 'Email not delivered',
   reminder_sent: 'Reminder sent', reminder_failed: 'Reminder not delivered', signed_notice_sent: 'Company notified', signed_notice_failed: 'Company notice not delivered' } as const;
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -88,8 +91,13 @@ export const fileApi = {
   update: (id: string, version: number, changes: Partial<FileValues>) => request<FileItem>(path(id), { method: 'PATCH', headers: json, body: JSON.stringify({ version, ...changes }) }),
   remove: (id: string) => request<void>(path(id), { method: 'DELETE' }),
   // The sender's time zone: the company's Date items print the date on their calendar.
-  send: (id: string, email: boolean) => request<SentFile>(`${path(id)}/send`, { method: 'POST', headers: json, body: JSON.stringify({ email, utc_offset_minutes: -new Date().getTimezoneOffset() }) }),
-  reissue: (id: string, email: boolean) => request<SentFile>(`${path(id)}/link`, { method: 'POST', headers: json, body: JSON.stringify({ email }) }),
+  send: (id: string, delivery: Delivery) => request<SentFile>(`${path(id)}/send`, { method: 'POST', headers: json, body: JSON.stringify({ ...sendOptions(delivery), utc_offset_minutes: -new Date().getTimezoneOffset() }) }),
+  reissue: (id: string, delivery: Delivery) => request<SentFile>(`${path(id)}/link`, { method: 'POST', headers: json, body: JSON.stringify(sendOptions(delivery)) }),
   events: (id: string) => request<FileEvent[]>(`${path(id)}/events`),
   signedPdfUrl: (id: string) => `${path(id)}/signed.pdf`,
 };
+
+/** Reminders follow only an emailed link. */
+function sendOptions({ email, reminders }: Delivery) {
+  return { email, reminders: email && reminders };
+}

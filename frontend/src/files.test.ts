@@ -43,8 +43,10 @@ describe('sendable and labels', () => {
   });
   it('labels every status and event', () => {
     expect(STATUS_LABELS).toEqual({ draft: 'Draft', sent: 'Sent', viewed: 'Viewed', signed: 'Signed' });
-    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_reissued', 'viewed', 'signed', 'email_sent', 'email_failed',
+    expect(Object.keys(EVENT_LABELS)).toEqual(['created', 'sent', 'link_created', 'link_reissued', 'viewed', 'signed', 'email_sent', 'email_failed',
       'reminder_sent', 'reminder_failed', 'signed_notice_sent', 'signed_notice_failed']);
+    expect(EVENT_LABELS.sent).toBe('Sent by email');
+    expect(EVENT_LABELS.link_created).toBe('Link created, not emailed');
     expect(EVENT_LABELS.email_sent).toBe('Email sent');
     expect(EVENT_LABELS.email_failed).toBe('Email not delivered');
   });
@@ -59,8 +61,8 @@ describe('fileApi', () => {
     await fileApi.list();
     await fileApi.create(values());
     await fileApi.update('f/1', 3, { signer_name: 'Alex' });
-    await fileApi.send('f/1', true);
-    await fileApi.reissue('f/1', false);
+    await fileApi.send('f/1', { email: true, reminders: true });
+    await fileApi.reissue('f/1', { email: false, reminders: true });  // no email, so no reminders either
     await fileApi.events('f/1');
     fetch.mockImplementationOnce(async () => new Response(null, { status: 204 }));
     await fileApi.remove('f/1');
@@ -69,8 +71,8 @@ describe('fileApi', () => {
       ['/api/files', 'GET', undefined],
       ['/api/files', 'POST', values()],
       ['/api/files/f%2F1', 'PATCH', { version: 3, signer_name: 'Alex' }],
-      ['/api/files/f%2F1/send', 'POST', { email: true, utc_offset_minutes: -new Date().getTimezoneOffset() }],
-      ['/api/files/f%2F1/link', 'POST', { email: false }],
+      ['/api/files/f%2F1/send', 'POST', { email: true, reminders: true, utc_offset_minutes: -new Date().getTimezoneOffset() }],
+      ['/api/files/f%2F1/link', 'POST', { email: false, reminders: false }],
       ['/api/files/f%2F1/events', 'GET', undefined],
       ['/api/files/f%2F1', 'DELETE', undefined],
     ]);

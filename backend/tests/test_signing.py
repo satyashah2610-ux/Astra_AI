@@ -134,7 +134,7 @@ def test_signing_records_signature_and_evidence(client, tmp_path):
 def test_signing_directly_from_sent_is_allowed(client):
     item, token = sent_file(client)
     assert sign(client, token).status_code == 200
-    assert events(client, item["id"]) == ["created", "sent", "signed"]
+    assert events(client, item["id"]) == ["created", "link_created", "signed"]  # no email set up: the link was not emailed
 
 
 def test_signed_file_cannot_be_signed_again(client):
@@ -182,7 +182,7 @@ def test_events_timeline_records_the_full_lifecycle(client):
     client.post("/api/signing/view", headers=auth(token))
     sign(client, token)
     timeline = client.get(f"/api/files/{item['id']}/events").json()
-    assert [event["type"] for event in timeline] == ["created", "sent", "link_reissued", "link_reissued", "viewed", "signed"]
+    assert [event["type"] for event in timeline] == ["created", "link_created", "link_reissued", "link_reissued", "viewed", "signed"]
     assert all(event["at"] for event in timeline)
     signer_events = [event for event in timeline if event["type"] in {"viewed", "signed"}]
     assert all(event["user_agent"] == BROWSER and event["ip"] for event in signer_events)
@@ -206,5 +206,5 @@ def test_signed_file_survives_restart(tmp_path):
         sign(first, token)
     with StaffClient(create_app(tmp_path)) as restarted:
         assert restarted.get("/api/signing", headers=auth(token)).json()["status"] == "signed"
-        assert events(restarted, item["id"]) == ["created", "sent", "signed"]
+        assert events(restarted, item["id"]) == ["created", "link_created", "signed"]
         assert (tmp_path / "signatures" / f"{item['id']}.png").is_file()

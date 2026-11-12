@@ -79,7 +79,7 @@ On the [live app](https://app.signwithastra.com):
   - Sending **freezes** a copy of the agreement, so later template edits never change what the client signs.
 - **Status and timeline:**
   - Status moves Draft → Sent → Viewed → Signed.
-  - The timeline records created, sent, email sent or not delivered, every link opened by the signer, reminders, signed, and the company notified.
+  - The timeline records created, "Sent by email" or "Link created, not emailed" (when you share the link yourself), email sent or not delivered, every link opened by the signer, reminders, signed, and the company notified.
   - Status and timeline update by themselves every few seconds.
 - **Links:** the signing link is shown once with **Copy link**. **Reissue link** makes a new one and stops the old one from working.
 - **Search** by file, client or signer, and **filter** by status.
@@ -104,7 +104,7 @@ On the [live app](https://app.signwithastra.com):
 
 ### Email (through Resend)
 - **Signing email:** sent from "*staff name* via Astra Sign". It contains the personal message and a **Review and sign** button, and replies go to the staff member.
-- **Reminders:** every 24 hours, for up to **7 days per emailed link**. Each reminder carries a fresh link.
+- **Reminders:** every 24 hours, for up to **7 days per emailed link**, unless staff untick "Remind them every day" when sending. Each reminder carries a fresh link.
 - **"Signed" email:** sent to the staff member who sent the file.
 - **Account emails:** confirmation and password reset.
 - **Limits:** 50 signing emails and 100 reminders per company per day. Past the limit, sending still works and staff copy the link themselves.

@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { Loader2, Send } from 'lucide-react';
-import type { FileValues } from './files';
+import type { Delivery, FileValues } from './files';
 
-type Props = { values: FileValues; agreementName: string; emailLink: boolean; busy: boolean; onCancel: () => void; onConfirm: () => void };
+type Props = { values: FileValues; agreementName: string; delivery: Delivery; busy: boolean; onCancel: () => void; onConfirm: () => void };
 
 /** The last check before a file goes to the client: every detail staff entered, then send or go back. */
-export default function SendCheck({ values, agreementName, emailLink, busy, onCancel, onConfirm }: Props) {
+export default function SendCheck({ values, agreementName, delivery, busy, onCancel, onConfirm }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal?.(); }, []);
   const rows: [string, string][] = [
     ['File name or reference', values.title], ['Client', values.client_name], ['Signer', values.signer_name], ['Signer email', values.signer_email],
-    ['Agreement', agreementName], ...(values.message.trim() ? [['Personal message', values.message.trim()] as [string, string]] : []),
-    ['Email the link', emailLink ? 'Yes, with a daily reminder for up to 7 days' : 'No, you will share the link yourself'],
+    ['Agreement', agreementName], ...(delivery.email && values.message.trim() ? [['Personal message', values.message.trim()] as [string, string]] : []),
+    ['Email the link', !delivery.email ? 'No, you will share the link yourself' : delivery.reminders ? 'Yes, with a daily reminder for up to 7 days' : 'Yes, without reminders'],
   ];
   return <dialog ref={dialog} className="send-check" open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined}
     onCancel={e => { e.preventDefault(); if (!busy) onCancel(); }} aria-labelledby="send-check-title">

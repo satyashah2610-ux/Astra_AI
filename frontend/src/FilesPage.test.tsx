@@ -66,7 +66,7 @@ beforeEach(() => {
     if (action === 'send') {
       if (failSend) return json({ detail: 'Could not send. Try again.' }, 503);
       Object.assign(file, { status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1, version: file.version + 1 });
-      event(file.id, 'sent');
+      event(file.id, body?.email === false || emailSetup !== 'sending' ? 'link_created' : 'sent');
       return json({ file, signing_path: `/sign#token-${++tokens}`, email: emailResult(file, body) });
     }
     if (action === 'link') { event(file.id, 'link_reissued'); return json({ file, signing_path: `/sign#token-${++tokens}`, email: emailResult(file, body) }); }
@@ -306,7 +306,7 @@ it('emails the link with a personal message by default, and shows the delivery o
   await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/emailing this link to Jordan Smith/i)).toHaveTextContent('jordan@example.com');
   expect(requests.find(r => r.method === 'POST' && r.url === '/api/files')!.body.message).toBe('Hi Jordan,\nHere is the agreement.');
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, reminders: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
   expect(screen.getByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);  // copying still works
   const timeline = screen.getByRole('list', { name: 'Timeline' });
   expect(await within(timeline).findByText('Email sent', {}, { timeout: 5000 })).toBeInTheDocument();
@@ -322,7 +322,7 @@ it('can send without emailing, for staff who share the link another way', async 
   await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
   await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/Send this link to Jordan Smith/)).toBeInTheDocument();
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: false, utc_offset_minutes: -new Date().getTimezoneOffset() });
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: false, reminders: false, utc_offset_minutes: -new Date().getTimezoneOffset() });
 });
 
 it('says so when email is not set up, so staff copy the link', async () => {
@@ -332,7 +332,7 @@ it('says so when email is not set up, so staff copy the link', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Send for signature' }));
   await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));  // after checking the details
   expect(await screen.findByText(/Email isn’t set up/)).toBeInTheDocument();
-  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
+  expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, reminders: true, utc_offset_minutes: -new Date().getTimezoneOffset() });  // the company's Date item is the sender's date
 });
 
 it('lets staff choose whether a reissued link is emailed', async () => {
@@ -345,7 +345,7 @@ it('lets staff choose whether a reissued link is emailed', async () => {
   await userEvent.click(box);
   await userEvent.click(within(dialog).getByRole('button', { name: 'Make a new link' }));
   expect(await screen.findByLabelText('Signing link')).toHaveValue(`${origin()}/sign#token-1`);
-  expect(requests.find(r => r.url.endsWith('/link'))!.body).toEqual({ email: false });
+  expect(requests.find(r => r.url.endsWith('/link'))!.body).toEqual({ email: false, reminders: false });
 });
 
 it('shows an undelivered email on the timeline', async () => {
@@ -406,10 +406,82 @@ it('a signed file shows the company was told, and no next reminder', async () =>
   expect(reminders).not.toHaveTextContent('Next');
 });
 
-it('says reminders follow an emailed link', async () => {
-  render(<FilesPage agreements={[mind]} />);
-  await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
-  expect(screen.getByText(/reminder every day for up to 7 days/i)).toBeInTheDocument();
+describe('how the link reaches the client', () => {
+  const REMIND = 'Remind them every day for up to 7 days if it isn’t signed';
+
+  it('reminders are a choice under the email box, on by default', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    expect(field('Email the link to the signer')).toBeChecked();
+    expect(field(REMIND)).toBeChecked();
+    expect(field(REMIND)).toBeEnabled();
+  });
+
+  it('without the email, the reminders and the personal message are greyed out', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    await userEvent.click(field('Email the link to the signer'));
+    expect(field(REMIND)).toBeDisabled();
+    expect(field(REMIND)).not.toBeChecked();
+    expect(field('Personal message (optional)')).toBeDisabled();
+    await userEvent.click(field('Email the link to the signer'));  // ticked again: both come back, reminders still on
+    expect(field(REMIND)).toBeChecked();
+    expect(field('Personal message (optional)')).toBeEnabled();
+  });
+
+  it('a message typed before unticking the email is not kept, so no later email sends it', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    await fillForm();
+    await userEvent.type(field('Personal message (optional)'), 'Hi Jordan');
+    await userEvent.click(field('Email the link to the signer'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));
+    await screen.findByLabelText('Signing link');
+    expect(requests.find(r => r.method === 'POST' && r.url === '/api/files')!.body.message).toBe('');
+  });
+
+  it('the link can be emailed without reminders', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    await fillForm();
+    await userEvent.click(field(REMIND));
+    await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+    const check = screen.getByRole('dialog', { name: 'Check the details before sending' });
+    expect(within(check).getByText('Yes, without reminders')).toBeInTheDocument();
+    await userEvent.click(within(check).getByRole('button', { name: 'Confirm and send' }));
+    await screen.findByLabelText('Signing link');
+    expect(requests.find(r => r.url.endsWith('/send'))!.body).toEqual({ email: true, reminders: false, utc_offset_minutes: -new Date().getTimezoneOffset() });
+  });
+
+  it('a link shared by staff shows as "Link created, not emailed", not "Sent by email"', async () => {
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
+    await fillForm();
+    await userEvent.click(field('Email the link to the signer'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm and send' }));
+    const timeline = await screen.findByRole('list', { name: 'Timeline' });
+    expect(await within(timeline).findByText('Link created, not emailed')).toBeInTheDocument();
+    expect(within(timeline).queryByText('Sent by email')).not.toBeInTheDocument();
+  });
+
+  it('sending a draft and reissuing a link offer the same choice', async () => {
+    files = [makeFile({ title: 'Draft job' }), makeFile({ title: 'Waiting job', status: 'sent', document_name: 'MIND agreement', sent_at: '2026-11-09T12:30:00+00:00', field_count: 1 })];
+    render(<FilesPage agreements={[mind]} />);
+    await userEvent.click(await screen.findByRole('button', { name: /Draft job/ }));
+    await screen.findByRole('button', { name: 'Send for signature' });
+    await userEvent.click(field('Email the link to the signer'));
+    expect(field(REMIND)).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /Waiting job/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Reissue link' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText(REMIND)).toBeChecked();
+    await userEvent.click(within(dialog).getByLabelText(REMIND));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Make a new link' }));
+    await screen.findByLabelText('Signing link');
+    expect(requests.find(r => r.url.endsWith('/link'))!.body).toEqual({ email: true, reminders: false });
+  });
 });
 
 describe('filling a new file from an earlier client', () => {

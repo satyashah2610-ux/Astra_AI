@@ -112,6 +112,7 @@ class SendOptions(BaseModel):
     """Optional body of send / reissue link."""
     model_config = ConfigDict(extra="forbid")
     email: StrictBool = True  # email the link to the signer
+    reminders: StrictBool = True  # with an emailed link: remind the signer daily for up to 7 days
     utc_offset_minutes: StrictInt = Field(default=0, ge=-840, le=840)  # the sender's time zone, for the company's Date items
 
 

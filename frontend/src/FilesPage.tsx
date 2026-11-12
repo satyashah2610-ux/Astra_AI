@@ -3,7 +3,8 @@ import { Check, Copy, Download, FileSignature, Link2, Loader2, Pencil, Plus, Ref
 import type { Agreement } from './api';
 import FileForm, { type FormAction } from './FileForm';
 import SendCheck from './SendCheck';
-import { EVENT_LABELS, fileApi, pastSigners, signingUrl, STATUS_LABELS, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
+import DeliveryChoice from './DeliveryChoice';
+import { DEFAULT_DELIVERY, EVENT_LABELS, fileApi, pastSigners, signingUrl, STATUS_LABELS, type Delivery, type EmailResult, type FileEvent, type FileItem, type FileStatus, type FileValues, type SentFile } from './files';
 
 type Mode = 'view' | 'create' | 'edit';
 type Confirm = null | 'send' | 'reissue' | 'delete';
@@ -22,7 +23,7 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [links, setLinks] = useState<Record<string, { url: string; email: EmailResult }>>({});
-  const [emailLink, setEmailLink] = useState(true);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
   const [eventsCheck, setEventsCheck] = useState(0);
   const emailCheck = useRef<number | undefined>(undefined);
   const [copied, setCopied] = useState(false);
@@ -71,7 +72,7 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
   }, [selected?.id, selected?.version, selected?.status, eventsCheck]);
   useEffect(() => () => window.clearTimeout(emailCheck.current), []);
   useEffect(() => { if (confirm) confirmDialog.current?.showModal?.(); }, [confirm]);
-  useEffect(() => { setCopied(false); setEmailLink(true); setMode(current => current === 'edit' ? 'view' : current); setConfirm(null); }, [selectedId]);  // a dialog never moves to another file
+  useEffect(() => { setCopied(false); setDelivery(DEFAULT_DELIVERY); setMode(current => current === 'edit' ? 'view' : current); setConfirm(null); }, [selectedId]);  // a dialog never moves to another file
 
   function replace(file: FileItem) { changes.current += 1; setFiles(current => current.some(f => f.id === file.id) ? current.map(f => f.id === file.id ? file : f) : [file, ...current]); }
   function remember({ file, signing_path, email }: SentFile) {
@@ -85,14 +86,14 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
     finally { setBusy(false); }
   }
 
-  const submit = (values: FileValues, action: FormAction, email: boolean) => run(async () => {
+  const submit = (values: FileValues, action: FormAction, chosen: Delivery) => run(async () => {
     if (action === 'save' && selected) { replace(await fileApi.update(selected.id, editVersion.current, values)); setMode('view'); return; }
     const created = await fileApi.create(values);
     replace(created); setSelectedId(created.id); setMode('view');
-    if (action === 'send') remember(await fileApi.send(created.id, email));
+    if (action === 'send') remember(await fileApi.send(created.id, chosen));
   });
-  const send = () => selected && run(async () => { setConfirm(null); remember(await fileApi.send(selected.id, emailLink)); });
-  const reissue = () => selected && run(async () => { setConfirm(null); remember(await fileApi.reissue(selected.id, emailLink)); });
+  const send = () => selected && run(async () => { setConfirm(null); remember(await fileApi.send(selected.id, delivery)); });
+  const reissue = () => selected && run(async () => { setConfirm(null); remember(await fileApi.reissue(selected.id, delivery)); });
   const remove = () => selected && run(async () => {
     const id = selected.id;
     try { await fileApi.remove(id); }
@@ -138,7 +139,7 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
       </aside>
 
       <div className="file-detail">
-        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} pastSigners={earlierClients} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, email) => void submit(values, action, email)} onCancel={() => setMode('view')}
+        {mode !== 'view' ? <FileForm key={mode === 'edit' ? `edit-${selected?.id}` : 'create'} agreements={agreements} pastSigners={earlierClients} mode={mode === 'edit' ? 'edit' : 'create'} busy={busy} onSubmit={(values, action, chosen) => void submit(values, action, chosen)} onCancel={() => setMode('view')}
           initial={mode === 'edit' && selected ? { title: selected.title, client_name: selected.client_name, signer_name: selected.signer_name, signer_email: selected.signer_email, agreement_id: selected.agreement_id, message: selected.message ?? '' } : undefined} />
         : !selected ? <div className="empty-state files-empty"><span className="large-icon"><FileSignature size={30} /></span><h2>No files yet</h2>
             <p>Create a file for each new job. Astra Sign sends the client your agreement<br />and keeps the signed copy with the file.</p>
@@ -162,8 +163,8 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
             {selected.status === 'draft' && <>
               <button className="primary" disabled={busy} onClick={() => setConfirm('send')}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Send for signature</button>
               <button className="secondary" disabled={busy} onClick={() => { setError(''); editVersion.current = selected.version; setMode('edit'); }}><Pencil size={15} />Edit</button>
-              <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label></>}
-            {(selected.status === 'sent' || selected.status === 'viewed') && <button className="secondary" disabled={busy} onClick={() => { setEmailLink(true); setConfirm('reissue'); }}><RotateCcw size={15} />Reissue link</button>}
+              <DeliveryChoice value={delivery} onChange={setDelivery} disabled={busy} /></>}
+            {(selected.status === 'sent' || selected.status === 'viewed') && <button className="secondary" disabled={busy} onClick={() => { setDelivery(DEFAULT_DELIVERY); setConfirm('reissue'); }}><RotateCcw size={15} />Reissue link</button>}
             {selected.status === 'signed' && <a className="primary" href={fileApi.signedPdfUrl(selected.id)} download><Download size={15} />Download signed PDF</a>}
             {selected.status !== 'signed' && <button className="delete-agreement" disabled={busy} onClick={() => setConfirm('delete')}><Trash2 size={15} />Delete file</button>}
           </div>
@@ -188,12 +189,12 @@ export default function FilesPage({ agreements, active = true }: { agreements: A
       </div>
     </div>
 
-    {confirm === 'send' && selected && <SendCheck values={{ ...selected, message: selected.message ?? '' }} agreementName={agreementName(selected)} emailLink={emailLink} busy={busy}
+    {confirm === 'send' && selected && <SendCheck values={{ ...selected, message: selected.message ?? '' }} agreementName={agreementName(selected)} delivery={delivery} busy={busy}
       onCancel={() => setConfirm(null)} onConfirm={() => void send()} />}
     {confirm && confirm !== 'send' && selected && <dialog ref={confirmDialog} open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined} onCancel={e => { e.preventDefault(); if (!busy) setConfirm(null); }} aria-labelledby="file-confirm-title">
       {confirm === 'reissue'
         ? <><h2 id="file-confirm-title">Make a new signing link?</h2><p>The link already sent to {selected.signer_name} will stop working.</p>
-          <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the new link to the signer</label></>
+          <DeliveryChoice value={delivery} onChange={setDelivery} disabled={busy} emailLabel="Email the new link to the signer" /></>
         : <><h2 id="file-confirm-title">Delete file?</h2><p>Permanently delete <strong>{selected.title}</strong>{selected.status !== 'draft' ? ' and stop its signing link from working' : ''}? This cannot be undone.</p></>}
       <div className="dialog-actions">
         <button autoFocus className="secondary" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>
