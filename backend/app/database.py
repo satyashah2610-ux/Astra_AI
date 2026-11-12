@@ -87,5 +87,8 @@ def hide_password_in_logs(url: str) -> None:
 def connect_pool(url: str, max_size: int = 10) -> ConnectionPool:
     """A small pool. Prepared statements are off because Neon's pooled endpoint (PgBouncer) doesn't keep them."""
     hide_password_in_logs(url)
-    return ConnectionPool(url, min_size=1, max_size=max_size, timeout=30, open=True,
+    # No connection is kept open while idle, so the free database can sleep: unused ones close within about 2 minutes
+    # (the pool shrinks on a fixed 60 s tick), well inside the 5 idle minutes. Each is checked before use, since one
+    # left from before the database slept may have been dropped.
+    return ConnectionPool(url, min_size=0, max_size=max_size, max_idle=60, timeout=30, open=True, check=ConnectionPool.check_connection,
                           kwargs={"row_factory": row_factory, "prepare_threshold": None})
