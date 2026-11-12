@@ -80,8 +80,9 @@ test('draft, edit, search, filter, send, reissue and delete a file', async ({ pa
   const reissue = page.getByRole('dialog', { name: 'Make a new signing link?' });
   await reissue.getByLabel('Email the new link to the signer').uncheck();
   await reissue.getByRole('button', { name: 'Make a new link' }).click();
+  await expect(reissue).toBeHidden();
+  await expect(page.getByLabel('Signing link')).not.toHaveValue(first);  // wait for the new link to replace the old
   const second = await page.getByLabel('Signing link').inputValue();
-  expect(second).not.toBe(first);
   await client.goto('about:blank');
   await client.goto(first);
   await expect(client.getByRole('heading', { name: 'This link isn’t valid' })).toBeVisible();
@@ -108,8 +109,10 @@ test('draft, edit, search, filter, send, reissue and delete a file', async ({ pa
 test('agreements can be found by name', async ({ page }) => {
   await page.goto('/');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
-  for (const name of ['Roofing terms', 'Plumbing terms'])
+  for (const name of ['Roofing terms', 'Plumbing terms']) {
     await page.getByLabel('Upload PDF file').setInputFiles({ name: `${name}.pdf`, mimeType: 'application/pdf', buffer: pdf });
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();  // one upload at a time, as a person would
+  }
   const library = page.getByLabel('Agreement library');
   await expect(library.getByRole('button')).toHaveCount(2);
   await page.getByLabel('Search agreements').fill('roof');
