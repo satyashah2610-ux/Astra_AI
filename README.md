@@ -1,150 +1,106 @@
 # Astra Sign
 
-A local agreement template editor: upload a PDF, draw signature fields, move or resize them, and save the template for reuse. Python FastAPI backend, React/TypeScript frontend, and PostgreSQL (Neon) persistence.
+Send agreements to clients and get them signed online. Staff upload a PDF once, mark where the client signs, fill in and sign the company's side, and reuse it as a template. Each job is a file: enter the client's details, confirm them, and the client gets an emailed link to sign on any device, with no account. Staff follow each file live (sent, opened, signed), clients get daily reminders, and the signed PDF comes with a certificate of the whole signing record.
 
-## Run on Windows
+Live: **https://app.signwithastra.com**. Python FastAPI backend, React/TypeScript frontend, PostgreSQL (Neon), hosted on Render.
 
-From the repository root, install dependencies once:
+## Features
+
+- **Accounts:** company sign-up with email confirmation, login, forgot password, log out after 10 idle minutes, delete account. Each company sees only its own data. Failed logins are limited: 5 per email, or 20 per network address, in 15 minutes.
+- **Agreements (templates):** upload a PDF (up to 20 MB and 100 pages) or try the sample. Then:
+  - **For the client:** add signature boxes, plus text printed on the document and comments the client sees while signing.
+  - **For the company's side:** tick, dot, name, date, initials and the company's signature, printed onto the document when it's sent.
+  - **Editing:** drag, resize, use the keyboard, zoom, jump to a page by number, rename. Duplicate names get " (1)", " (2)".
+- **Files:** one per job. Create and send (after a details check) or save as a draft. Fill a new file from an earlier client, add a personal message, search and filter by status. Each file has a live timeline: email sent, opened by signer, reminders, signed. Reissue a link (the old one stops working), delete a file, and download the signed PDF.
+- **Signing page:** no account needed. The client reads every page and adds ticks, dots, text, name, date, initials and a typed or drawn signature. "Go to signature" steps through every box. They give electronic-signature consent, sign, and download their copy.
+- **Signed PDF:** the exact document that was sent, with every item stamped in, plus a certificate: signer, consent, IP address, browser, the full timeline and the SHA-256 hash of the sent document.
+- **Email (Resend):** the signing link with your message, and a reminder every 24 hours for up to 7 days per emailed link. Staff get an email when the client signs. Each company has a daily limit of 50 signing emails, and sending still works past it: you copy the link yourself.
+
+Design notes for each feature are in [docs/design/](docs/design/); decisions and their reasons are in [Decisions.md](Decisions.md).
+
+## Run locally (Windows)
+
+Install once, from the repository root:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r backend\requirements.lock.txt
-cd frontend
-npm.cmd ci
-cd ..
+cd frontend; npm.cmd ci; cd ..
 ```
 
-Point the app at its PostgreSQL database. Create `.env.local` in the repository root (git-ignored; never commit it):
+Create `.env.local` in the repository root (git-ignored; never commit it):
 
 ```
 DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
 ```
 
-With a Neon project this file is written for you by `neon env pull`. Variables already set in the environment always win over the file. On first start the backend creates its tables (versioned migrations in `backend/app/schema/`).
-
-Start the backend in one terminal:
+The backend creates its tables on first start (migrations in `backend/app/schema/`). Then start each part in its own terminal:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-Start the frontend in another terminal:
-
 ```powershell
-cd frontend
-npm.cmd run dev
+cd frontend; npm.cmd run dev
 ```
 
-Open **http://127.0.0.1:5173**. API documentation: http://127.0.0.1:8000/docs.
+Open **http://127.0.0.1:5173**. Without email configured, new accounts are confirmed at once and signing links are shown to copy. On macOS/Linux, use `.venv/bin/python` and `npm`. Developed with Node.js 24 and Python 3.14.
 
-On macOS/Linux use `.venv/bin/python` and `npm` instead. Node.js 24 and Python 3.14 were used for development. The only external service is PostgreSQL (`DATABASE_URL`).
+### Settings
 
-## Try the feature
-
-1. On the login page click **Create an account**: your company name, your name, work email and a password of at least 10 characters. You'll get an email with a link to confirm your address (valid 24 hours; without email configured, accounts are confirmed at once); then log in. (Signers never need an account.)
-1. Click **Try a sample agreement**, or upload `examples/sample-agreement.pdf` (or your own PDF).
-2. For the sample, use **Next page** to reach the signature area on page 2.
-3. Click and drag on an empty part of the PDF to draw a signature box. Alternatively, click **Add signature box** in the toolbar for a default-sized box. Drawing and moving work together without switching tools.
-4. Drag a field to move it; drag its lower-right handle to resize it. Select **Remove field** to remove a field.
-5. Click **Save template**. Reload or reopen the agreement: saved fields return in their original positions.
-
-To remove an uploaded agreement, select it in the library and click **Delete agreement** beside Save template. Confirm **Delete permanently** to remove its PDF and all saved signature boxes. Cancel keeps the agreement and any unsaved edits. Deleting the last agreement returns to the upload screen.
-
-Repeated uploads are named **Agreement**, **Agreement (1)**, **Agreement (2)**, etc. Matching ignores capitalization and chooses the first available number. Existing duplicate library names are numbered automatically when the backend starts, preserving the oldest original name and any names already using a number. The source filename, PDF contents, and saved fields are retained.
-
-Tab to a field and use arrow keys to move it. Shift + arrow keys resize it; Delete/Backspace removes it. Zoom and page navigation are available above the document. Unsaved changes prompt before switching agreements/tabs or leaving the page.
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection (required) |
+| `RESEND_API_KEY`, `ASTRA_EMAIL_FROM` | Send email through Resend, e.g. `ASTRA_EMAIL_FROM="Astra Sign <sign@mail.yourdomain.com>"` (domain verified in Resend) |
+| `ASTRA_EMAIL_OUTBOX` | Write emails to this folder instead of sending them (used by the browser tests) |
+| `ASTRA_APP_URL` | The address used in email links; set it in production |
+| `ASTRA_ALLOWED_HOSTS` | Host names the backend answers to (default `127.0.0.1,localhost`) |
+| `ASTRA_SECURE_COOKIES=1` | When served over HTTPS |
+| `ASTRA_TRUSTED_PROXIES` | Number of proxies in front of the app (`1` on Render), used to read the visitor's real address |
+| `ASTRA_DATA_DIR` | Where PDFs and signature images are stored (default `backend/data/`) |
+| `ASTRA_REMINDER_MINUTES` | Minutes between reminders (default 1440; `2` to watch them locally) |
 
 ## Storage
 
-PostgreSQL stores agreement metadata, editable signature coordinates, files, signatures and the audit trail. Files on disk live in `backend/data/`: `uploads/` stores original template PDFs, `documents/` stores the frozen copy sent on each file, `signatures/` stores each signer's signature image, and `signed/` stores each finished signed PDF. Back up the database and `backend/data/` together (moving PDFs to object storage is planned before hosting). To choose another directory, set `ASTRA_DATA_DIR` before starting the backend.
+PostgreSQL holds accounts, agreements, box positions, files, signatures and the audit trail. PDFs and signature images are files under `ASTRA_DATA_DIR`: original templates, the frozen copy sent on each file, signature images and finished signed PDFs. Back up the database and that folder together.
 
 ## Security
 
-- **Staff accounts.** Every staff page and API needs a login (email + password). Each company sees only its own agreements and files; another company's ids return 404. Passwords are stored as salted scrypt hashes; the session is an HttpOnly, SameSite=Lax cookie whose value is stored only as a hash, valid 14 days and ended by **Log out** (click your initials in the header). **Delete account** in the same menu, after typing `I want to delete account`, permanently deletes the company, its login, agreements, files and signed PDFs; see [docs/design/11-account-menu-and-deletion.md](docs/design/11-account-menu-and-deletion.md). Set `ASTRA_SECURE_COOKIES=1` when serving over HTTPS behind a proxy. Signers use their link only, never an account. See [docs/design/08-accounts-and-login.md](docs/design/08-accounts-and-login.md).
-- The backend only answers requests addressed to an allowed host name (default `127.0.0.1,localhost`), which blocks DNS-rebinding attacks from other websites. When deploying, set `ASTRA_ALLOWED_HOSTS` to the public host name, e.g. `ASTRA_ALLOWED_HOSTS=sign.example.com`.
-- State-changing requests from other websites are rejected (`Origin` / `Sec-Fetch-Site` checks). Any proxy in front of the backend must pass the browser's `Host` header through unchanged; the Vite dev proxy is configured this way.
-- Request bodies are size-limited while they stream in: 21 MB for uploads, 1 MB for the public signing endpoints.
-- Signing links put the secret after `#` (`/sign#<token>`). Browsers never send that part to a server, so it stays out of every log; API calls send it in a header. Only a SHA-256 hash of each secret is stored.
-- API responses forbid framing, caching, content sniffing and referrers. PDF.js runs with code evaluation disabled.
-
-Coordinates are fractions of the displayed PDF page, with a top-left origin and one-based page numbers. Original PDFs are preserved. The **Original PDF** download does not include signature placement overlays; the app restores those from the database. Signed document generation is part of the future customer signing feature.
+- Staff log in with email and password: salted scrypt hashes, and an HttpOnly, SameSite=Lax session cookie stored only as a hash. Another company's IDs return 404.
+- Signing links put the secret after `#` (`/sign#<token>`), so it never reaches a server log. Only a SHA-256 hash of each secret is stored.
+- Requests from other websites are refused (`Origin` / `Sec-Fetch-Site`), and only allowed host names are answered (DNS-rebinding protection). Request bodies are size-limited while they stream in.
+- Responses forbid framing, caching, content sniffing and referrers. PDF.js runs with code evaluation off. The database password never appears in errors or logs.
+- Signers are told that their IP address, browser and signing time are recorded.
 
 ## Tests
 
-Backend unit and integration tests run against a **separate test database**, never the app's own. Put its *direct* (non-pooled) URL in `.env.test.local` (git-ignored):
+All tests use a **separate test database**, never the app's own. Put its direct (non-pooled) URL in `.env.test.local` (git-ignored):
 
 ```
 ASTRA_TEST_DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
 ```
 
-With Neon, use a branch named `test` (`neon branches create --name test`, then `neon connection-string test`). Tests refuse to start if this URL points at the same server as `DATABASE_URL`, and they only create, empty and drop their own `astra_test_…` schema. A local PostgreSQL also works: `docker compose up -d` starts one on port 54329 (`postgresql://astra:astra@127.0.0.1:54329/postgres`). Browser tests reset an `astra_e2e` schema on the same test database each run.
+With Neon, use a branch named `test`. The tests refuse to run against the app's own database server, and they only touch their own schemas.
+
+From the repository root:
 
 ```powershell
-cd backend
-..\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q backend          # backend unit and integration tests
+npm.cmd --prefix frontend test                          # frontend unit tests
+npm.cmd --prefix frontend run test:e2e                  # end-to-end tests in real Chrome
 ```
 
-Frontend geometry unit tests and React integration tests:
-
-```powershell
-cd frontend
-npm.cmd test
-```
-
-Real-browser integration tests:
-
-```powershell
-cd frontend
-npm.cmd run test:e2e
-```
-
-Playwright uses installed Google Chrome, starts isolated backend/frontend servers on ports 8011/5174, and stores test uploads in a unique system temporary directory. Tests exercise real PDF rendering, drawing, moving, resizing, zoom, persistence, deletion, unsaved-change protection, validation, and mobile layout. They do not use your normal application database. Failure screenshots/traces appear in `frontend/test-results/`.
-
-Production frontend build:
-
-```powershell
-cd frontend
-npm.cmd run build
-```
-
-The Vite development server proxies `/api` to port 8000. `API_TARGET` overrides that proxy target. The browser tests run against the built app with `vite preview`, which reuses the same `server.proxy` setting, so keep `/api` proxying in `server.proxy`. A future production deployment must serve the built frontend and proxy `/api` to the Python service, with durable storage; uploading the frontend alone is insufficient.
-
-## Current scope
-
-- Implemented: PDF library, search, upload/drop, page navigation, zoom, editable signature fields, explicit save, restart persistence, validation, stale-save protection, sample PDF, responsive layout, and keyboard controls.
-- Files (backend): a file is one job or case for one client. Create a draft file with a client, a signer and an agreement, then send it to get a signing link. Sending freezes a copy of the agreement PDF and its signature boxes, so later template edits never change what was sent. Only a hash of each link's secret is stored; **Reissue link** revokes the old one. See [docs/design/02-files-and-signing-links.md](docs/design/02-files-and-signing-links.md) for the API.
-- Signing page: the client opens `/sign#<token>` with no account, reads every page of the frozen document with the signature boxes highlighted, types or draws a signature, ticks the electronic-signature consent and signs. The file moves Sent → Viewed → Signed, and each step is recorded with time, IP address and browser (`GET /api/files/{id}/events`). Already-signed and invalid/replaced links show a clear message. See [docs/design/03-signing-page.md](docs/design/03-signing-page.md).
-- Signed PDF: when the client signs, the app stamps their signature into every box of the exact document that was sent (rotated pages included) and appends a **certificate of completion**: signer, email, method, consent wording, IP address, browser, the full timeline and the SHA-256 of the sent document. It is built once and never changes. The client downloads it from the confirmation page (or by reopening their link); staff download it from `GET /api/files/{id}/signed.pdf`. See [docs/design/04-signed-pdf.md](docs/design/04-signed-pdf.md).
-- Files tab: a file is one job for one client. **New file** → fill in the job, client, signer and agreement → **Create and send** (a last check shows every detail before **Confirm and send**), or **Save as draft**. Add an optional **personal message**; with **Email the link to the signer** ticked (the default), the signer gets an email from "<your name> via Astra Sign" with your message and a **Review and sign** button, and replies go to you. The timeline shows **Email sent** or **Email not delivered**. The signing link also appears with **Copy link** for sending another way. It is shown only once (only a hash is stored); **Reissue link** makes a new one and stops the old one. Each file shows its status (Draft, Sent, Viewed, Signed), a timeline, and **Download signed PDF** once signed. The list and timeline update by themselves every few seconds while the page is open, and a refresh stays on Files. See [docs/design/05-files-screen.md](docs/design/05-files-screen.md).
-- The company signs too: in the agreement editor, **You sign** adds a tick, dot, name, date (the send date), initials or the company's signature (adopted once, typed or drawn). They are printed onto the document when a file is sent. Both viewers have a **Page [n] of N** box: type a number and press Enter. On the signing page, **Go to signature boxes** steps through every box from top to bottom, then starts again. See [docs/design/18-company-signing-and-workspace-updates.md](docs/design/18-company-signing-and-workspace-updates.md).
-- Company text and comments: in the agreement editor, **Add text** places text that is printed onto the document when it is sent (the document hash covers it); **Add comment** places a note the client sees next to that spot while signing, never printed.
-- Client items: on the signing page the client picks **Tick, Dot, Text, Name, Date, Initials or Signature** and taps anywhere on any page; items can be dragged, resized and removed. Name and Date are filled in by the server (the signing date in the client's time zone). Initials are adopted once, like the signature. Everything is stamped into the signed PDF and listed on the certificate. Printed text supports Western European characters; other scripts are refused with a clear message rather than printed as boxes. See [docs/design/06-text-comments-and-signer-items.md](docs/design/06-text-comments-and-signer-items.md).
-- **Forgot password:** "Forgot password?" on the login page emails a one-time link (valid 1 hour) to choose a new password; saving it signs out every session and shows **Password reset** with a link to log in. The answer never reveals whether an email has an account, and requests are limited (3 per account, 10 per network address, per hour). See [docs/design/09-forgot-password.md](docs/design/09-forgot-password.md).
-- **Email:** sent through [Resend](https://resend.com) when `RESEND_API_KEY` and `ASTRA_EMAIL_FROM` are set (put them in the git-ignored `.env`, e.g. `ASTRA_EMAIL_FROM="Astra Sign <sign@mail.yourdomain.com>"` with that domain verified in Resend). `ASTRA_EMAIL_OUTBOX=<folder>` writes emails to files instead (used by the browser tests; nothing is sent). `ASTRA_APP_URL` sets the address used in email links; **set it in production** (e.g. `https://app.signwithastra.com`). Without it, links use the request's own host name and port, accepted only as an exact allow-listed `name[:port]`. Without configuration, nothing is sent.
-- **Behind a proxy (hosting):** set `ASTRA_TRUSTED_PROXIES` to the number of proxies in front of the app, usually `1` (the host's load balancer). The visitor's address is then read from `X-Forwarded-For`, counting that many entries from the right; entries further left are written by the visitor and never trusted. It is used for the failed-login limits and the signing audit trail. Unset means 0: the header is ignored. A value other than 0 to 5 stops the app at startup. Only count a proxy that every request must pass through: if the host's own address is reachable directly, a proxy in front of it (such as Cloudflare's orange cloud) can be skipped, so keep Cloudflare DNS-only and use `1`. Start the server with `uvicorn --no-proxy-headers`, so it doesn't apply its own (separate) forwarded-header rules.
-- **Reminders:** a file whose link was emailed gets a reminder (with a fresh link; earlier links keep working) every `ASTRA_REMINDER_MINUTES` minutes, 1440 (24 hours) by default, until it is signed, at most 7 times per emailed link (a week of daily reminders). Set it to `2` locally to watch them arrive. When the client signs, the staff member who sent the file is emailed.
-- **Signing emails:** see [docs/design/10-signing-email.md](docs/design/10-signing-email.md). Without email configured, or past the limit of 50 signing emails per company per day, sending still works and the screen asks you to copy the link.
-- **Login protection:** 5 wrong passwords for one email (or 20 from one network address) within 15 minutes lock logins for that email or address until the 15 minutes pass; a password reset unlocks. New accounts must confirm their email before logging in. See [docs/design/12-login-protection.md](docs/design/12-login-protection.md).
-- Not built yet: an email to staff when the client signs, inviting colleagues, and hosting.
-- This first version is a local single-workspace app. Authentication and company data isolation must be added before hosting it for multiple companies.
-- PDFs must be unencrypted, no larger than 20 MiB, and contain 1–100 pages. PDF pages are rendered as a canvas; selectable PDF text and screen-reader transcription of document contents are not included yet.
-
-See [Decisions.md](Decisions.md) for design choices, the TDD record, and verification notes.
-
-## References
-
-- [FastAPI file upload documentation](https://fastapi.tiangolo.com/tutorial/request-files/)
-- [FastAPI testing documentation](https://fastapi.tiangolo.com/tutorial/testing/)
-- [PDF.js API](https://mozilla.github.io/pdf.js/api/)
+The end-to-end tests build the app, start their own backend and frontend (ports 8011 and 5174) and drive Google Chrome through every main journey. Screenshots and traces of failures go to `frontend/test-results/`.
 
 ## Hosting (Render)
 
-One Docker container serves the API and the built pages; files live on a persistent disk. Full design: [docs/design/15-hosting.md](docs/design/15-hosting.md).
+One Docker container serves the API and the built pages. Files live on a persistent disk. Full design: [docs/design/15-hosting.md](docs/design/15-hosting.md).
 
-- **New → Web Service**, repo `Astra_AI`, branch `main`, language **Docker** (uses the `Dockerfile`), instance **Starter**.
-- **Advanced → Add disk:** mount path `/var/data`, 1 GB.
-- **Environment variables:** `DATABASE_URL`, `RESEND_API_KEY`, `ASTRA_EMAIL_FROM` (secrets: entered only in Render's dashboard), plus
-  `ASTRA_DATA_DIR=/var/data`, `ASTRA_APP_URL=https://app.signwithastra.com`, `ASTRA_ALLOWED_HOSTS=<service>.onrender.com,app.signwithastra.com`,
-  `ASTRA_SECURE_COOKIES=1`, `ASTRA_TRUSTED_PROXIES=1`.
-- **Health check path:** leave it empty. Render's checks use an internal host name, which the host allow-list refuses.
-- **Custom domain:** add `app.signwithastra.com` in Render, then the CNAME it shows in Cloudflare DNS, **DNS only** (grey cloud).
+- **New → Web Service:** repo `Astra_AI`, branch `main`, language **Docker**, instance **Starter**. Add a disk at `/var/data` (1 GB).
+- **Environment:** `DATABASE_URL`, `RESEND_API_KEY` and `ASTRA_EMAIL_FROM` (secrets, entered only in Render), plus `ASTRA_DATA_DIR=/var/data`, `ASTRA_APP_URL=https://app.signwithastra.com`, `ASTRA_ALLOWED_HOSTS=<service>.onrender.com,app.signwithastra.com`, `ASTRA_SECURE_COOKIES=1` and `ASTRA_TRUSTED_PROXIES=1`.
+- **Health check path:** leave it empty. Render checks with an internal host name, which the allow-list refuses.
+- **Custom domain:** add `app.signwithastra.com` in Render, then the CNAME it shows in Cloudflare DNS, set to **DNS only** (grey cloud).
+
+## Limits
+
+PDFs must be unencrypted. Printed text supports Western European characters (other scripts are refused with a clear message). PDF pages are drawn as images, so the document's text can't be selected or read by screen readers. Not built yet: inviting colleagues to a company account.
