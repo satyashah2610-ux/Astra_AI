@@ -1,5 +1,7 @@
 # Astra Sign
 
+**Demo video:** https://drive.google.com/file/d/1W6PCquzQNcDFwfXVf1faQwS4HA0875HR/view?usp=sharing
+
 Send agreements to clients and get them signed online. Staff upload a PDF once, mark where the client signs, fill in and sign the company's side, and reuse it as a template. Each job is a file: enter the client's details, confirm them, and the client gets an emailed link to sign on any device, with no account. Staff follow each file live (sent, opened, signed), clients get daily reminders, and the signed PDF comes with a certificate of the whole signing record.
 
 Live: **https://app.signwithastra.com**. Python FastAPI backend, React/TypeScript frontend, PostgreSQL (Neon), hosted on Render.
