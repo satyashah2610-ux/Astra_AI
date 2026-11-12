@@ -79,7 +79,7 @@ On the [live app](https://app.signwithastra.com):
   - Sending **freezes** a copy of the agreement, so later template edits never change what the client signs.
 - **Status and timeline:**
   - Status moves Draft → Sent → Viewed → Signed.
-  - The timeline records created, sent, email sent or not delivered, every link opened by the signer, reminders, signed, and the company notified.
+  - The timeline records created, "Sent by email" or "Link created, not emailed" (when you share the link yourself), email sent or not delivered, every link opened by the signer, reminders, signed, and the company notified.
   - Status and timeline update by themselves every few seconds.
 - **Links:** the signing link is shown once with **Copy link**. **Reissue link** makes a new one and stops the old one from working.
 - **Search** by file, client or signer, and **filter** by status.
@@ -104,7 +104,7 @@ On the [live app](https://app.signwithastra.com):
 
 ### Email (through Resend)
 - **Signing email:** sent from "*staff name* via Astra Sign". It contains the personal message and a **Review and sign** button, and replies go to the staff member.
-- **Reminders:** every 24 hours, for up to **7 days per emailed link**. Each reminder carries a fresh link.
+- **Reminders:** every 24 hours, for up to **7 days per emailed link**, unless staff untick "Remind them every day" when sending. Each reminder carries a fresh link.
 - **"Signed" email:** sent to the staff member who sent the file.
 - **Account emails:** confirmation and password reset.
 - **Limits:** 50 signing emails and 100 reminders per company per day. Past the limit, sending still works and staff copy the link themselves.
@@ -301,6 +301,14 @@ The app runs on **Render** as one Docker container, with a persistent disk for f
    - **Why it waits:** it depends on the same AI and data-privacy decisions as point 1, and the core signing flow came first.
 4. **Load testing.** How the app behaves with, say, 1,000 people at once was not tested. The database is on Neon's free tier, and a realistic load test would use much of its monthly compute allowance and could take the live app offline. Before a real launch, load tests would run on a separate paid staging copy.
 5. **Team features.** Inviting colleagues to a company account, and roles, are not built yet. Each company currently has one login.
+6. **Payments and subscriptions (Stripe).** If the app is taken further, billing would be a subscription model on Stripe:
+   - plans per company (for example Free, Pro and Business), monthly or yearly, with a free trial;
+   - plan limits, such as agreements sent per month, staff users and templates;
+   - Stripe Checkout to pay, and the Stripe Customer Portal to upgrade, downgrade, change card or cancel;
+   - Stripe webhooks to keep each company's plan status up to date.
+
+   Card details would stay with Stripe and never be stored in the app. It was left out because pricing isn't decided yet and the core signing product came first.
+7. **Cloud file storage.** PDFs, signatures and signed documents are saved on a persistent disk attached to the Render server, which ties them to that one server. As the app grows they would move to Cloudflare R2 object storage, so the app can run on several servers and backups and scaling are simpler.
 
 ## Limits
 

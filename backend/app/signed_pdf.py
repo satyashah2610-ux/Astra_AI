@@ -19,7 +19,7 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 
 from .signatures import decode_signature_png
 
-EVENT_LABELS = {"created": "Created", "sent": "Sent", "link_reissued": "Link reissued", "viewed": "Opened by signer", "signed": "Signed",
+EVENT_LABELS = {"created": "Created", "sent": "Sent by email", "link_created": "Link created, not emailed", "link_reissued": "Link reissued", "viewed": "Opened by signer", "signed": "Signed",
                 "email_sent": "Email sent", "email_failed": "Email not delivered", "reminder_sent": "Reminder sent",
                 "reminder_failed": "Reminder not delivered", "signed_notice_sent": "Company notified",
                 "signed_notice_failed": "Company notice not delivered"}

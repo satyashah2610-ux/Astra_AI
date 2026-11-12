@@ -60,7 +60,7 @@ test('the whole loop in the UI: prepare, create and send, client signs, staff do
   await page.getByRole('button', { name: 'Refresh' }).click();
   await expect(page.getByTestId('file-status')).toHaveText('Signed');
   const timeline = page.getByRole('list', { name: 'Timeline' });
-  for (const label of ['Created', 'Sent', 'Opened by signer', 'Signed']) await expect(timeline).toContainText(label);
+  for (const label of ['Created', 'Sent by email', 'Opened by signer', 'Signed']) await expect(timeline).toContainText(label);
   const downloading = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download signed PDF' }).click();
   const download = await downloading;

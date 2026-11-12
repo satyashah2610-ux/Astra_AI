@@ -24,6 +24,7 @@ DEFAULT_MINUTES = 24 * 60
 MAX_MINUTES = 366 * 24 * 60  # anything longer is a mistake
 BATCH = 20  # reminders per check, so one check never holds the loop for long
 MAX_REMINDERS = 7  # after each emailed link: a week of daily reminders, then they stop
+FIRST_CHECK = 30.0  # seconds after the app starts
 
 
 def reminder_interval() -> timedelta:
@@ -40,8 +41,9 @@ def after(interval: timedelta) -> str:
 
 
 def check_every() -> float:
-    """Seconds between checks: a quarter of the interval, between 1 and 30."""
-    return min(30.0, max(1.0, reminder_interval().total_seconds() / 4))
+    """Seconds between checks: a quarter of the interval, between 1 second and 15 minutes. With daily reminders that
+    is every 15 minutes, longer than the 5 idle minutes after which the free Neon database sleeps."""
+    return min(15 * 60.0, max(1.0, reminder_interval().total_seconds() / 4))
 
 
 def send_due_reminders(storage: Storage, sender, stop: threading.Event | None = None) -> int:
@@ -94,17 +96,20 @@ def record_delivery(storage: Storage, sender, email, file_id: str, ok: str, fail
 async def reminder_loop(storage: Storage, sender, stop: threading.Event) -> None:
     """Runs for the app's lifetime; one failed check never stops the next. When cancelled (the app is stopping and
     `stop` is set), a check already running finishes its current reminder first, so it never outlives the database pool."""
+    delay = min(FIRST_CHECK, check_every())  # soon after a start or deploy, not a whole interval later
     while True:
-        await asyncio.sleep(check_every())
+        await asyncio.sleep(delay)
         check = asyncio.ensure_future(asyncio.to_thread(send_due_reminders, storage, sender, stop))
+        attempted = 0
         try:
-            await asyncio.shield(check)
+            attempted = await asyncio.shield(check)
         except asyncio.CancelledError:
             with contextlib.suppress(Exception):
                 await check
             raise
         except Exception:
             logger.exception("Reminder check failed")
+        delay = 0 if attempted >= BATCH else check_every()  # a full batch: more may be due, so check again at once
 
 
 def notify_signed(storage: Storage, sender, file_id: str, base_url: str) -> None:

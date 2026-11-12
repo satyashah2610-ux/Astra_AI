@@ -343,11 +343,15 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 .suggestions li strong { font-weight: 600; color: var(--ink); }
 .suggestions li span { overflow-wrap: anywhere; }
 .suggestions li:hover, .suggestions li.active { background: var(--green-tint); }
-.check-hint { display: block; margin: -6px 0 4px 26px; }
 .field-error { font-size: 12px; font-weight: 500; color: var(--red); }
 .form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .check-row { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .check-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); }
+/* Email the link, and under it the reminders; whatever only applies to an emailed link greys out without one. */
+.delivery-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.check-row.nested { margin-left: 24px; }
+.check-row.off, .form-field.off label, .form-field.off .field-hint { color: var(--muted); opacity: .6; cursor: default; }
+.form-field.off textarea { background: var(--paper); color: var(--muted); cursor: not-allowed; }
 .password-row { position: relative; display: flex; }
 .password-row input { flex: 1; padding-right: 42px; }
 .password-row .icon-button { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); }

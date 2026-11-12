@@ -33,6 +33,16 @@ test('draft, edit, search, filter, send, reissue and delete a file', async ({ pa
   page.on('pageerror', error => errors.push(error.message));
   await agreementWithBox(page, 'Lifecycle agreement');
   await page.getByRole('tab', { name: 'Files' }).click();
+
+  // Without the email, the reminders and the personal message are greyed out.
+  await page.getByRole('button', { name: 'New file' }).first().click();
+  await page.getByLabel('Email the link to the signer').uncheck();
+  await expect(page.getByLabel('Personal message (optional)')).toBeDisabled();
+  await expect(page.getByLabel('Remind them every day for up to 7 days if it isn’t signed')).toBeDisabled();
+  await page.getByLabel('Email the link to the signer').check();
+  await expect(page.getByLabel('Personal message (optional)')).toBeEnabled();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
   await draft(page, 'Kitchen job', 'Harbor Homes', 'Lifecycle agreement');
   await draft(page, 'Garden job', 'Cedar Yard', 'Lifecycle agreement');
 
@@ -53,9 +63,14 @@ test('draft, edit, search, filter, send, reissue and delete a file', async ({ pa
   // Send the kitchen job without email, after checking the details.
   await list.getByRole('button', { name: /Kitchen job/ }).click();
   await page.getByLabel('Email the link to the signer').uncheck();
+  await expect(page.getByLabel('Remind them every day for up to 7 days if it isn’t signed')).toBeDisabled();  // no email, no reminders
   await page.getByRole('button', { name: 'Send for signature' }).click();
-  await page.getByRole('dialog', { name: 'Check the details before sending' }).getByRole('button', { name: 'Confirm and send' }).click();
+  const check = page.getByRole('dialog', { name: 'Check the details before sending' });
+  await expect(check).toContainText('No, you will share the link yourself');
+  await check.getByRole('button', { name: 'Confirm and send' }).click();
   await expect(page.getByTestId('file-status')).toHaveText('Sent');
+  await expect(page.getByRole('list', { name: 'Timeline' })).toContainText('Link created, not emailed');
+  await expect(page.getByRole('list', { name: 'Timeline' })).not.toContainText('Sent by email');
   const first = await page.getByLabel('Signing link').inputValue();
   const filters = page.getByRole('group', { name: 'Filter by status' });
   await filters.getByRole('button', { name: 'Draft' }).click();

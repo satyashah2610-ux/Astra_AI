@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from
 import { Loader2, Save, Send } from 'lucide-react';
 import type { Agreement } from './api';
 import SendCheck from './SendCheck';
-import { cleanFileValues, matchSigners, MAX_MESSAGE, sendable, validateFile, type FieldErrors, type FileValues, type PastSigner } from './files';
+import DeliveryChoice from './DeliveryChoice';
+import { cleanFileValues, DEFAULT_DELIVERY, matchSigners, MAX_MESSAGE, sendable, validateFile, type Delivery, type FieldErrors, type FileValues, type PastSigner } from './files';
 
 export type FormAction = 'send' | 'draft' | 'save';
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
   initial?: FileValues;
   mode: 'create' | 'edit';
   busy: boolean;
-  onSubmit: (values: FileValues, action: FormAction, emailLink: boolean) => void;
+  onSubmit: (values: FileValues, action: FormAction, delivery: Delivery) => void;
   onCancel: () => void;
 };
 
@@ -27,7 +28,10 @@ const FIELDS: { key: Exclude<keyof FileValues, 'agreement_id' | 'message'>; labe
 export default function FileForm({ agreements, pastSigners = [], initial, mode, busy, onSubmit, onCancel }: Props) {
   const [values, setValues] = useState<FileValues>(initial ?? { ...EMPTY, agreement_id: agreements.find(sendable)?.id ?? '' });
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [emailLink, setEmailLink] = useState(true);
+  const [delivery, setDelivery] = useState<Delivery>(DEFAULT_DELIVERY);
+  const noEmail = mode === 'create' && !delivery.email;  // the message only travels in the email
+  // Sent without the email, a message typed earlier is dropped: kept, a later emailed link would send it unseen.
+  const outgoing = () => ({ ...cleanFileValues(values), ...(noEmail ? { message: '' } : {}) });
   const [suggesting, setSuggesting] = useState(false);
   const [active, setActive] = useState(-1);
   const [checking, setChecking] = useState(false);  // "Create and send" first shows every detail to check
@@ -49,7 +53,7 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
     setErrors(found);
     if (Object.keys(found).length > 0) return;
     if (action === 'send') setChecking(true);
-    else onSubmit(cleanFileValues(values), action, emailLink);
+    else onSubmit(cleanFileValues(values), action, delivery);
   }
   const set = (key: keyof FileValues, value: string) => { setValues(current => ({ ...current, [key]: value })); setErrors(current => ({ ...current, [key]: undefined })); };
   /** Fill the client, signer and email from an earlier file; everything else stays as it is. */
@@ -105,15 +109,14 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
       </select>
       {errors.agreement_id && <small className="field-error" id="file-agreement_id-error">{errors.agreement_id}</small>}
     </div>
-    <div className={`form-field ${errors.message ? 'invalid' : ''}`}>
+    <div className={`form-field ${errors.message ? 'invalid' : ''} ${noEmail ? 'off' : ''}`}>
       <label htmlFor="file-message">Personal message (optional)</label>
-      <textarea id="file-message" rows={4} value={values.message} maxLength={MAX_MESSAGE} disabled={busy} aria-invalid={Boolean(errors.message)}
+      <textarea id="file-message" rows={4} value={values.message} maxLength={MAX_MESSAGE} disabled={busy || noEmail} aria-invalid={Boolean(errors.message)}
         aria-describedby={errors.message ? 'file-message-error' : 'file-message-hint'} onChange={e => set('message', e.target.value)} />
       {errors.message ? <small className="field-error" id="file-message-error">{errors.message}</small>
-        : <small className="field-hint" id="file-message-hint">Shown in the email to the signer, e.g. “Hi Jordan, here’s the agreement we discussed.”</small>}
+        : <small className="field-hint" id="file-message-hint">{noEmail ? 'Only sent with the email. Tick “Email the link to the signer” to add one.' : 'Shown in the email to the signer, e.g. “Hi Jordan, here’s the agreement we discussed.”'}</small>}
     </div>
-    {mode === 'create' && <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label>}
-    {mode === 'create' && emailLink && <small className="field-hint check-hint">If it isn’t signed, they get a reminder every day for up to 7 days.</small>}
+    {mode === 'create' && <DeliveryChoice value={delivery} onChange={setDelivery} disabled={busy} />}
     <div className="form-actions">
       <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       {mode === 'create'
@@ -121,7 +124,7 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
           <button type="submit" className="primary" disabled={busy}>{busy ? <Loader2 className="spin" size={15} /> : <Send size={15} />}Create and send</button></>
         : <button type="submit" className="primary" disabled={busy}>{busy ? <Loader2 className="spin" size={15} /> : <Save size={15} />}Save changes</button>}
     </div>
-    {checking && <SendCheck values={cleanFileValues(values)} agreementName={agreements.find(a => a.id === values.agreement_id)?.name ?? ''} emailLink={emailLink} busy={busy}
-      onCancel={() => setChecking(false)} onConfirm={() => { setChecking(false); onSubmit(cleanFileValues(values), 'send', emailLink); }} />}
+    {checking && <SendCheck values={cleanFileValues(values)} agreementName={agreements.find(a => a.id === values.agreement_id)?.name ?? ''} delivery={delivery} busy={busy}
+      onCancel={() => setChecking(false)} onConfirm={() => { setChecking(false); onSubmit(outgoing(), 'send', delivery); }} />}
   </form>;
 }
