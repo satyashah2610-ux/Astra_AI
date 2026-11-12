@@ -18,7 +18,7 @@ from .events import list_events, record_event
 from .lifecycle import FileStatus, can_transition
 from .links import app_url
 from .models import FileCreate, FileUpdate, SendOptions
-from .reminders import after, record_delivery, reminder_interval
+from .reminders import MAX_REMINDERS, after, record_delivery, reminder_interval
 from .signed_documents import ensure_signed_pdf, signed_pdf_filename
 from .signed_pdf import mark_type, print_text_marks
 from .signing import signing_date
@@ -83,10 +83,12 @@ def create_files_router(storage: Storage, current_user, email_sender=None) -> AP
         return "sending" if take_email_slot(db, account["organization_id"]) else "limit_reached"
 
     def schedule_reminders(db, identifier: str, email: str, account: dict, base_url: str) -> None:
-        """After a send or reissue: earlier reminder links stop working; reminders follow only an emailed link."""
+        """After a send or reissue: earlier reminder links stop working; an emailed link gets up to MAX_REMINDERS reminders."""
         db.execute("DELETE FROM signing_links WHERE file_id = %s", (identifier,))
-        db.execute("UPDATE files SET remind_at = %s, sent_by = %s, link_base = %s WHERE id = %s",
-                   (after(reminder_interval()) if email == "sending" else None, account["user_id"], base_url, identifier))
+        emailed = email == "sending"
+        db.execute("UPDATE files SET remind_at = %s, reminders_left = %s, sent_by = %s, link_base = %s WHERE id = %s",
+                   (after(reminder_interval()) if emailed else None, MAX_REMINDERS if emailed else 0,
+                    account["user_id"], base_url, identifier))
 
     @router.post("", status_code=201)
     def create_file(body: FileCreate, account: dict = Staff):

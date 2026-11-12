@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** "Page [n] of N": type a page number and press Enter to go there. Numbers outside the document go to the nearest page. */
 export default function PageJump({ current, total, disabled, onGo }: { current: number; total: number; disabled?: boolean; onGo: (page: number) => void }) {
   const [typed, setTyped] = useState(String(current));
-  useEffect(() => setTyped(String(current)), [current]);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (document.activeElement !== input.current) setTyped(String(current)); }, [current]);  // never over what's being typed
 
   function go() {
     const number = Number.parseInt(typed, 10);
@@ -14,7 +15,7 @@ export default function PageJump({ current, total, disabled, onGo }: { current: 
   }
 
   return <label className="page-jump">Page
-    <input type="number" inputMode="numeric" min={1} max={total} aria-label="Go to page" value={typed} disabled={disabled}
+    <input ref={input} type="number"inputMode="numeric" min={1} max={total} aria-label="Go to page" value={typed} disabled={disabled}
       onChange={e => setTyped(e.target.value)} onFocus={e => e.target.select()} onBlur={() => setTyped(String(current))}
       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); go(); } }} />
     of {total}</label>;

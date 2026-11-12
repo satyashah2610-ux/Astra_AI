@@ -107,12 +107,12 @@ export default function SigningPage({ token }: { token: string }) {
   return <div className="signing-shell">{header}
     <main className="signing-layout">
       <section className="signing-document" aria-label="Agreement to sign">
-        <div className="item-tools" role="toolbar" aria-label="Add to the document">
-          <span className="item-tools-label">Add to the document</span>
-          {ITEM_TOOLS.map(({ type, label }) => <button key={type} aria-pressed={tool === type} disabled={busy} onClick={() => setTool(current => current === type ? null : type)}>{TOOL_ICONS[type]}{label}</button>)}
-          <span className="item-tools-hint" role="status">{tool ? `Tap the page where the ${ITEM_LABELS[tool].toLowerCase()} should go.` : 'Pick one, then tap the page. Drag to move; × to remove.'}</span>
-        </div>
         <PdfPages source={api.pdf} marks={view.marks} comments={view.comments ?? []} pageCount={view.page_count} signature={signature?.image}
+          toolbar={<div className="item-tools" role="toolbar" aria-label="Add to the document">
+            <span className="item-tools-label">Add to the document</span>
+            {ITEM_TOOLS.map(({ type, label }) => <button key={type} aria-pressed={tool === type} disabled={busy} onClick={() => setTool(current => current === type ? null : type)}>{TOOL_ICONS[type]}{label}</button>)}
+            <span className="item-tools-hint" role="status">{tool ? `Tap the page where the ${ITEM_LABELS[tool].toLowerCase()} should go.` : 'Pick one, then tap the page. Drag to move; × to remove.'}</span>
+          </div>}
           renderOverlay={(page, size) => <SignerLayer page={page} size={size} items={items.filter(item => item.page === page)} tool={tool} selected={selectedItem} focusId={focusId}
             values={{ name, date: today, signature: signature?.image, initials: initials?.image }} disabled={busy}
             onAdd={addItem} onChange={changeItem} onRemove={removeItem} onSelect={setSelectedItem} />} />

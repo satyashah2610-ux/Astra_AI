@@ -409,7 +409,7 @@ it('a signed file shows the company was told, and no next reminder', async () =>
 it('says reminders follow an emailed link', async () => {
   render(<FilesPage agreements={[mind]} />);
   await userEvent.click((await screen.findAllByRole('button', { name: 'New file' }))[0]);
-  expect(screen.getByText(/reminder every day until/i)).toBeInTheDocument();
+  expect(screen.getByText(/reminder every day for up to 7 days/i)).toBeInTheDocument();
 });
 
 describe('filling a new file from an earlier client', () => {
@@ -504,7 +504,7 @@ describe('checking the details before sending', () => {
     await userEvent.type(field('Personal message (optional)'), 'Hi Jordan');
     await userEvent.click(screen.getByRole('button', { name: 'Create and send' }));
     const dialog = screen.getByRole('dialog', { name: 'Check the details before sending' });
-    for (const text of ['Smith kitchen', 'Smith Family', 'Jordan Smith', 'jordan@example.com', 'MIND agreement', 'Hi Jordan', 'Yes, with a daily reminder until signed'])
+    for (const text of ['Smith kitchen', 'Smith Family', 'Jordan Smith', 'jordan@example.com', 'MIND agreement', 'Hi Jordan', 'Yes, with a daily reminder for up to 7 days'])
       expect(within(dialog).getByText(text)).toBeInTheDocument();
     expect(requests.filter(r => r.method === 'POST')).toHaveLength(0);
 

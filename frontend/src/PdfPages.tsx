@@ -13,17 +13,18 @@ type Props = {
   source: Source; marks: Mark[]; pageCount: number; signature?: string | null;
   comments?: Comment[];  // the company's notes to the signer: shown, never printed
   renderOverlay?: (page: number, size: PageSize) => ReactNode;  // the signer's own layer, drawn above everything else
+  toolbar?: ReactNode;  // shown in the same sticky bar as the page box, so the two never cover each other
 };
 
 /**
  * Read-only document: every page stacked, signature boxes highlighted, pages drawn as they scroll into view.
  * Every page's space is reserved from the known page count before the PDF arrives, so the layout never jumps.
  */
-export default function PdfPages({ source, marks, pageCount, signature, comments = [], renderOverlay }: Props) {
+export default function PdfPages({ source, marks, pageCount, signature, comments = [], renderOverlay, toolbar }: Props) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState('');
   const [width, setWidth] = useState(640);
-  const [jumped, setJumped] = useState(1);  // the page last asked for
+  const [current, setCurrent] = useState(1);  // the page across the middle of the screen
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,13 +42,38 @@ export default function PdfPages({ source, marks, pageCount, signature, comments
   }, []);
 
   const total = pdf?.numPages ?? pageCount;
+  const sheets = () => Array.from(container.current?.querySelectorAll<HTMLElement>('.signing-sheet') ?? []);
+  const jumping = useRef<{ page: number; until: number } | null>(null);  // a jump in progress: pages passed on the way don't count
+
+  useEffect(() => {  // the page box follows scrolling: whichever page crosses the middle of the screen
+    const all = sheets();
+    const observer = new IntersectionObserver(entries => {
+      const crossing = entries.filter(entry => entry.isIntersecting).at(-1);
+      if (!crossing) return;
+      const page = all.indexOf(crossing.target as HTMLElement) + 1;
+      const jump = jumping.current;
+      if (jump && page !== jump.page && Date.now() < jump.until) return;
+      jumping.current = null;
+      setCurrent(page);
+    }, { rootMargin: '-50% 0px -50% 0px' });
+    all.forEach(sheet => observer.observe(sheet));
+    const ownScroll = (event: Event) => {  // the signer scrolls by hand: follow them again at once (typing in a field isn't scrolling)
+      if (!(event.target instanceof Element && event.target.closest('input, textarea, select'))) jumping.current = null;
+    };
+    const events = ['wheel', 'touchstart', 'keydown'] as const;
+    events.forEach(type => window.addEventListener(type, ownScroll, { passive: true }));
+    return () => { observer.disconnect(); events.forEach(type => window.removeEventListener(type, ownScroll)); };
+  }, [total, error]);
+
   function goTo(page: number) {
-    setJumped(page);
-    container.current?.querySelectorAll('[data-testid="signing-page"]')[page - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    jumping.current = { page, until: Date.now() + 1500 };  // long enough for the smooth scroll to finish
+    setCurrent(page);
+    sheets()[page - 1]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  const pageBox = !error && total > 1 && <PageJump current={current} total={total} onGo={goTo} />;
   return <div className="signing-pages" ref={container}>
-    {!error && total > 1 && <div className="page-jump-bar"><PageJump current={jumped} total={total} onGo={goTo} /></div>}
+    {(toolbar || pageBox) && <div className="pages-bar">{toolbar}{pageBox}</div>}
     {error ? <div className="pdf-error" role="alert">{error}</div>
       : Array.from({ length: pdf?.numPages ?? pageCount }, (_, index) => <PdfPage key={index} pdf={pdf} page={index + 1} width={width} marks={marks.filter(mark => mark.page === index + 1)} comments={comments.filter(note => note.page === index + 1)} renderOverlay={renderOverlay} signature={signature} total={pdf?.numPages ?? pageCount} />)}
   </div>;

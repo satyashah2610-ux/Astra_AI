@@ -7,7 +7,8 @@ import { pointerCapture, TestPointerEvent } from './test-utils';
 import { fireEvent } from '@testing-library/react';
 import { blobText } from './test-utils';
 
-vi.mock('./PdfPages', () => ({ default: ({ marks, comments = [], renderOverlay }: any) => <div>
+vi.mock('./PdfPages', () => ({ default: ({ marks, comments = [], renderOverlay, toolbar }: any) => <div>
+  {toolbar}
   <div>PDF with {marks.length} signature box</div>
   {marks.map((m: any) => <div key={m.id} id={`sign-box-${m.id}`} />)}
   {comments.map((c: any) => <p key={c.id}>Note: {c.text}</p>)}
