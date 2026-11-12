@@ -30,3 +30,8 @@
 
 ## Tests
 Integration (backend): the migration gives existing files what is left of seven for their current link (failed attempts count); stops after seven and shows no next date; the seventh is still sent; emailing a reissued link starts a new seven; a reminder held back by the daily allowance doesn't count. Frontend: reminder wording (2); the page box follows scrolling; the page box shares the tools' bar; scrolling never overwrites a number being typed; pages passed during a jump do not change the box; the preview scales with the name length. Browser: scrolling back updates the page box; the page box overlaps no tool; adopt buttons stay inside the panel; a long name fits the preview.
+
+## Follow-up: the staff member's own name; tools on one line
+- The "Your signature" / "Your initials" panel has a **Your full name** box. It starts with the name used at sign-up; whatever staff type there is the name the typed signature (and the initials, from its first letters) is made from, and it is kept for the next adoption while that agreement is open. Nothing about the account changes.
+- Signing page: the tool buttons get the whole top row of the bar (Signature stays beside Initials); the page box sits at the right of the hint line below. Below 760px wide the page box takes its own line.
+- Browser tests added (`e2e/lifecycle.spec.ts`): draft, edit, search and status filters, send with the details check, the first link recorded once despite reloads, reissue (old link refused, new link opens and is recorded), delete (link refused); finding agreements by name; signing with a typed name. `updates.spec.ts` checks every signer tool sits on one line.

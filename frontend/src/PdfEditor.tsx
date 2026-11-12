@@ -54,6 +54,7 @@ export default function PdfEditor({ agreement, marks, onChange, disabled, signer
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<Box | null>(null);
   const [adopting, setAdopting] = useState<Adopting | null>(null);
+  const [adoptName, setAdoptName] = useState(signerName);  // the name signed with: the sign-up name until staff type their own
   const [adopted, setAdopted] = useState<Signature | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const scrollArea = useRef<HTMLDivElement>(null);
@@ -217,7 +218,8 @@ export default function PdfEditor({ agreement, marks, onChange, disabled, signer
       {adopting ? <section className="adopt-panel" aria-label={adopting.type === 'initials' ? 'Adopt your initials' : 'Adopt your signature'}>
         <div className="field-section-title">{adopting.type === 'initials' ? 'Your initials' : 'Your signature'}</div>
         <p className="field-help">Printed on the document when you send it. Adopted once, then reused on this agreement.</p>
-        <SignaturePad name={adopting.type === 'initials' ? initialsFrom(signerName) : signerName} onChange={setAdopted} label={adopting.type === 'initials' ? 'initials' : 'signature'} />
+        <label className="form-field"><span>Your full name</span><input value={adoptName} maxLength={200} autoComplete="name" disabled={disabled} onChange={e => setAdoptName(e.target.value)} /></label>
+        <SignaturePad name={adopting.type === 'initials' ? initialsFrom(adoptName) : adoptName} onChange={setAdopted} label={adopting.type === 'initials' ? 'initials' : 'signature'} />
         <div className="dialog-actions"><button className="secondary" disabled={disabled} onClick={() => setAdopting(null)}>Cancel</button><button className="primary" disabled={disabled || !adopted} onClick={finishAdopting}>{adopting.replace ? 'Use this one' : 'Place on the page'}</button></div>
       </section> : current ? <><div className="field-section-title">Selected field<span className="count">{marks.indexOf(current) + 1}</span></div><div className="selected-details"><span>Field type<strong>{KIND[kindOf(current)].label.replace(' field', '')}</strong></span><span>Page<strong>{current.page}</strong></span></div>{TEXT_KINDS.includes(kindOf(current)) && <div className="form-field mark-text-field">
         <label htmlFor="mark-text">{kindOf(current) === 'text' ? 'Text printed on the document' : kindOf(current) === 'name' ? 'Name printed on the document' : 'Comment for the client'}</label>
