@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PdfPages from './PdfPages';
@@ -88,8 +88,19 @@ it('after a jump, pages passed on the way do not change the page box', async () 
   const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
   await userEvent.clear(jump);
   await userEvent.type(jump, '5{Enter}');
-  act(() => jump.blur());  // the signer is reading, not typing
   scrollTo('Page 3 of 5');
   scrollTo('Page 4 of 5');  // the last page may never reach the middle of the screen
   expect(jump).toHaveValue(5);
+});
+
+it('after jumping with Enter, the page box follows scrolling again', async () => {
+  Element.prototype.scrollIntoView = () => {};
+  const scrollTo = scrollWatch();
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '2{Enter}');
+  fireEvent.wheel(window);  // the signer scrolls back up by hand
+  scrollTo('Page 1 of 5');
+  expect(jump).toHaveValue(1);
 });

@@ -11,6 +11,7 @@ export default function PageJump({ current, total, disabled, onGo }: { current: 
     if (Number.isNaN(number)) { setTyped(String(current)); return; }
     const page = Math.min(Math.max(number, 1), total);
     setTyped(String(page));
+    input.current?.blur();  // done typing: from here the box follows the page again
     onGo(page);
   }
 
