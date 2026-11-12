@@ -1,4 +1,4 @@
-"""Reminders until a file is signed, and the "signed" email to the staff member who sent it.
+"""Reminders until a file is signed (at most seven per emailed link), and the "signed" email to the staff member who sent it.
 
 A background loop in the app process sends due reminders. Each one is claimed under the database write lock,
 so several app processes never send the same reminder twice.
@@ -23,6 +23,7 @@ logger = logging.getLogger("astrasign.reminders")
 DEFAULT_MINUTES = 24 * 60
 MAX_MINUTES = 366 * 24 * 60  # anything longer is a mistake
 BATCH = 20  # reminders per check, so one check never holds the loop for long
+MAX_REMINDERS = 7  # after each emailed link: a week of daily reminders, then they stop
 
 
 def reminder_interval() -> timedelta:
@@ -64,7 +65,9 @@ def send_due_reminders(storage: Storage, sender, stop: threading.Event | None = 
                 continue
             db.execute("INSERT INTO signing_links (token_hash, file_id, created_at) VALUES (%s, %s, %s)",
                        (hash_token(token), row["id"], utc_now()))
-            db.execute("UPDATE files SET remind_at = %s WHERE id = %s", (after(interval), row["id"]))
+            db.execute("""UPDATE files SET reminders_left = reminders_left - 1,
+                                  remind_at = CASE WHEN reminders_left > 1 THEN %s END WHERE id = %s""",  # the last one: none after it
+                       (after(interval), row["id"]))
         attempted += 1
         sender_name = row["staff_name"] or row["company"]
         email = reminder_email(to=row["signer_email"], signer_name=row["signer_name"], sender_name=sender_name,

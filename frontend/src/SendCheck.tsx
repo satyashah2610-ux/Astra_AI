@@ -11,7 +11,7 @@ export default function SendCheck({ values, agreementName, emailLink, busy, onCa
   const rows: [string, string][] = [
     ['File name or reference', values.title], ['Client', values.client_name], ['Signer', values.signer_name], ['Signer email', values.signer_email],
     ['Agreement', agreementName], ...(values.message.trim() ? [['Personal message', values.message.trim()] as [string, string]] : []),
-    ['Email the link', emailLink ? 'Yes, with a daily reminder until signed' : 'No, you will share the link yourself'],
+    ['Email the link', emailLink ? 'Yes, with a daily reminder for up to 7 days' : 'No, you will share the link yourself'],
   ];
   return <dialog ref={dialog} className="send-check" open={typeof HTMLDialogElement.prototype.showModal !== 'function' ? true : undefined}
     onCancel={e => { e.preventDefault(); if (!busy) onCancel(); }} aria-labelledby="send-check-title">

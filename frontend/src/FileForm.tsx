@@ -113,7 +113,7 @@ export default function FileForm({ agreements, pastSigners = [], initial, mode, 
         : <small className="field-hint" id="file-message-hint">Shown in the email to the signer, e.g. “Hi Jordan, here’s the agreement we discussed.”</small>}
     </div>
     {mode === 'create' && <label className="check-row"><input type="checkbox" checked={emailLink} disabled={busy} onChange={e => setEmailLink(e.target.checked)} />Email the link to the signer</label>}
-    {mode === 'create' && emailLink && <small className="field-hint check-hint">If it isn’t signed, they get a reminder every day until it is.</small>}
+    {mode === 'create' && emailLink && <small className="field-hint check-hint">If it isn’t signed, they get a reminder every day for up to 7 days.</small>}
     <div className="form-actions">
       <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       {mode === 'create'

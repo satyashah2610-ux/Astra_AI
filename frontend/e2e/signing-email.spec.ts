@@ -27,7 +27,7 @@ test('sending a file emails the signer a personal message and a link that opens 
   await expect(page.getByText(/Emailing this link to Morgan Reed/)).toBeVisible();
   const shownLink = await page.getByLabel('Signing link').inputValue();
   await expect(page.getByRole('list', { name: 'Timeline' }).getByText('Email sent')).toBeVisible({ timeout: 10000 });
-  // Reminders are scheduled because the link was emailed (one a day until signed).
+  // Reminders are scheduled because the link was emailed (one a day for up to 7 days).
   const reminders = page.locator('.file-facts > div').filter({ hasText: 'Reminders' });
   await expect(reminders).toContainText('None sent yet');
   await expect(reminders).toContainText('Next');

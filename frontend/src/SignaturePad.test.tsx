@@ -55,3 +55,13 @@ it('shrinks a typed name until its ink, including swashes past the last letter, 
   const size = parseFloat(fonts.at(-1)!.split(' ')[1]);
   expect(size * 8.5).toBeLessThanOrEqual(560);  // ink fits inside the 600px image with a 20px margin each side
 });
+
+it('a long typed name is shrunk to fit the preview, never cut off', () => {
+  const long = 'Satya Shah Venkataraman Subramaniam';
+  const { getByLabelText, rerender } = render(<SignaturePad name={long} onChange={() => {}} />);
+  const text = getByLabelText('Signature preview').querySelector('span')!;
+  expect(text).toHaveTextContent(long);
+  expect(text.style.getPropertyValue('--chars')).toBe(String(long.length));  // the font size scales down with the length
+  rerender(<SignaturePad name="Jo" onChange={() => {}} />);
+  expect(getByLabelText('Signature preview').querySelector('span')!.style.getPropertyValue('--chars')).toBe('2');
+});

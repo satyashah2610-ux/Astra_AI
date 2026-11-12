@@ -387,8 +387,9 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 .pad-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 8px; background: var(--paper); }
 .pad-tabs button { flex: 1; padding: 7px; border: 0; border-radius: 6px; background: none; font-size: 13px; font-weight: 500; color: var(--muted); }
 .pad-tabs button[aria-selected=true] { background: var(--sheet); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(22, 35, 58, .12); }
-.typed-preview { height: 96px; display: flex; align-items: center; justify-content: center; padding: 0 12px; overflow: hidden; border: 1px solid var(--field); border-radius: 8px; background: #fff; }
-.typed-preview span { padding: 0 .3em; font: 500 40px 'Caveat', 'Segoe Script', cursive; color: #1d2c4d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.typed-preview { container-type: inline-size; height: 96px; display: flex; align-items: center; justify-content: center; padding: 0 12px; overflow: hidden; border: 1px solid var(--field); border-radius: 8px; background: #fff; }
+/* The font shrinks with the name's length (--chars) so the whole name fits the box; a very long name wraps rather than being cut off. */
+.typed-preview span { padding: 0 .3em; font: 500 clamp(14px, calc(190cqi / var(--chars, 10)), 40px)/1.1 'Caveat', 'Segoe Script', cursive; color: #1d2c4d; text-align: center; overflow-wrap: anywhere; }
 .typed-preview small, .draw-hint { font-size: 13px; color: var(--muted); }
 .draw-area { position: relative; border: 1px solid var(--field); border-radius: 8px; background: #fff; }
 .draw-area canvas { position: relative; z-index: 1; display: block; width: 100%; aspect-ratio: 3 / 1; touch-action: none; cursor: crosshair; }
@@ -410,7 +411,9 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 /* Signing page: the company's notes and the signer's own items */
 .company-note { position: absolute; z-index: 2; display: flex; align-items: flex-start; gap: 5px; padding: 5px 7px; overflow: auto; border: 1.5px solid #d9b45a; border-radius: 4px; background: rgba(251, 243, 226, .96); color: var(--amber); font-size: 12px; line-height: 1.35; box-shadow: 0 2px 8px rgba(138, 90, 11, .14); pointer-events: none; }
 .company-note svg { flex-shrink: 0; margin-top: 1px; }
-.item-tools { position: sticky; top: 8px; z-index: 5; width: 100%; max-width: 820px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 auto 14px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); box-shadow: 0 4px 16px rgba(22, 35, 58, .08); }
+.pages-bar { position: sticky; top: 8px; z-index: 5; width: 100%; max-width: 820px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 14px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 10px; background: var(--sheet); box-shadow: 0 4px 16px rgba(22, 35, 58, .08); }
+.pages-bar .page-jump { flex-shrink: 0; }
+.item-tools { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .item-tools-label { margin-right: 4px; font-size: 13px; font-weight: 600; color: var(--ink); }
 .item-tools button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--field); border-radius: 6px; background: var(--sheet); font-size: 13px; color: var(--ink-2); }
 .item-tools button:hover:not(:disabled) { background: var(--paper); }
@@ -509,7 +512,7 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
   .signing-top .brand { font-size: 17px; }
   .secure-note { font-size: 12px; }
   .signing-message { margin: 28px 16px; padding: 28px 18px; }
-  .item-tools { top: 4px; padding: 6px; }
+  .pages-bar { top: 4px; padding: 6px; }
   .item-tools button { padding: 6px 8px; font-size: 12px; }
   .item-tools-label { flex-basis: 100%; }
 }
@@ -525,7 +528,6 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 /* Page jump: "Page [n] of N" in the editor and above the signing pages. */
 .page-jump { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .page-jump input { width: 52px; height: 28px; padding: 0 6px; border: 1px solid var(--rule); border-radius: 6px; font: inherit; color: var(--ink); text-align: center; background: var(--sheet); }
-.page-jump-bar { position: sticky; top: 8px; z-index: 5; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); box-shadow: 0 2px 8px rgba(22, 35, 58, .08); }
 
 /* The company's own items on a template: printed in black when the file is sent. */
 .editor-tools { flex-wrap: wrap; }
@@ -538,6 +540,8 @@ dialog .delete-error { margin-top: 14px; padding: 10px 12px; border-radius: 6px;
 .signature-field .dot-mark { width: 60%; height: 60%; border-radius: 50%; background: #111; }
 .signature-field.selected[class*="kind-"]:not(.kind-text):not(.kind-comment):not(.kind-signature) { border-style: solid; border-color: var(--ink); }
 .adopt-panel { display: flex; flex-direction: column; gap: 10px; }
+.adopt-panel .dialog-actions { flex-wrap: wrap; margin-top: 8px; }  /* the side panel is narrow: the buttons share the width, or stack */
+.adopt-panel .dialog-actions button { flex: 1 1 auto; justify-content: center; }
 
 /* The last check before sending. */
 .send-check { width: min(520px, calc(100vw - 32px)); max-width: 520px; }

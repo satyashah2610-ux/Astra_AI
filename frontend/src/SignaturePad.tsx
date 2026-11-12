@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { Eraser, Keyboard, PenTool } from 'lucide-react';
 import { clamp, type Point } from './geometry';
 import { hasInk } from './strokes';
@@ -101,7 +101,7 @@ export default function SignaturePad({ name, onChange, label = 'signature' }: Pr
       <button role="tab" aria-selected={mode === 'drawn'} onClick={() => choose('drawn')}><PenTool size={14} />Draw</button>
     </div>
     {mode === 'typed'
-      ? <div className="typed-preview" aria-label={label === 'signature' ? 'Signature preview' : 'Initials preview'}>{name.trim() ? <span>{name.trim()}</span> : <small>Enter your full name above</small>}</div>
+      ? <div className="typed-preview" aria-label={label === 'signature' ? 'Signature preview' : 'Initials preview'}>{name.trim() ? <span style={{ '--chars': name.trim().length } as CSSProperties}>{name.trim()}</span> :<small>Enter your full name above</small>}</div>
       : <div className="draw-area">
         <canvas ref={canvas} width={PAD.width} height={PAD.height} aria-label={`Draw your ${label}`} data-testid={`${label}-canvas`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
         <span className="draw-line" aria-hidden="true" />

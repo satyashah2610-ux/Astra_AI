@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PdfPages from './PdfPages';
@@ -48,4 +48,59 @@ it('typing a page number and pressing Enter goes straight to that page', async (
   await userEvent.type(jump, '99{Enter}');  // past the end: the last page
   expect(scrolled.at(-1)).toBe('Page 5 of 5');
   expect(jump).toHaveValue(5);
+});
+
+it('the page box follows the page you scroll to', async () => {
+  const observers: IntersectionObserverCallback[] = [];
+  vi.stubGlobal('IntersectionObserver', class { constructor(callback: IntersectionObserverCallback) { observers.push(callback); } observe() {} disconnect() {} });
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const third = screen.getByLabelText('Page 3 of 5');
+  act(() => observers.forEach(callback => callback([{ target: third, isIntersecting: true } as unknown as IntersectionObserverEntry], {} as IntersectionObserver)));
+  expect(screen.getByRole('spinbutton', { name: 'Go to page' })).toHaveValue(3);
+});
+
+it('shares one bar with the signer\'s tools, so neither covers the other', () => {
+  render(<PdfPages source={source} marks={marks} pageCount={5} toolbar={<button>Tick</button>} />);
+  const bar = screen.getByRole('spinbutton', { name: 'Go to page' }).closest('.pages-bar');
+  expect(bar).toContainElement(screen.getByRole('button', { name: 'Tick' }));
+});
+
+function scrollWatch() {
+  const observers: IntersectionObserverCallback[] = [];
+  vi.stubGlobal('IntersectionObserver', class { constructor(callback: IntersectionObserverCallback) { observers.push(callback); } observe() {} disconnect() {} });
+  return (label: string) => act(() => observers.forEach(callback => callback([{ target: screen.getByLabelText(label), isIntersecting: true } as unknown as IntersectionObserverEntry], {} as IntersectionObserver)));
+}
+
+it('scrolling never overwrites a page number being typed', async () => {
+  const scrollTo = scrollWatch();
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '4');
+  scrollTo('Page 2 of 5');
+  expect(jump).toHaveValue(4);
+});
+
+it('after a jump, pages passed on the way do not change the page box', async () => {
+  Element.prototype.scrollIntoView = () => {};
+  const scrollTo = scrollWatch();
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '5{Enter}');
+  scrollTo('Page 3 of 5');
+  scrollTo('Page 4 of 5');  // the last page may never reach the middle of the screen
+  expect(jump).toHaveValue(5);
+});
+
+it('after jumping with Enter, the page box follows scrolling again', async () => {
+  Element.prototype.scrollIntoView = () => {};
+  const scrollTo = scrollWatch();
+  render(<PdfPages source={source} marks={marks} pageCount={5} />);
+  const jump = screen.getByRole('spinbutton', { name: 'Go to page' });
+  await userEvent.clear(jump);
+  await userEvent.type(jump, '2{Enter}');
+  fireEvent.wheel(window);  // the signer scrolls back up by hand
+  scrollTo('Page 1 of 5');
+  expect(jump).toHaveValue(1);
 });
