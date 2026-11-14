@@ -309,6 +309,7 @@ The app runs on **Render** as one Docker container, with a persistent disk for f
 
    Card details would stay with Stripe and never be stored in the app. It was left out because pricing isn't decided yet and the core signing product came first.
 7. **Cloud file storage.** PDFs, signatures and signed documents are saved on a persistent disk attached to the Render server, which ties them to that one server. As the app grows they would move to Cloudflare R2 object storage, so the app can run on several servers and backups and scaling are simpler.
+8. **Sign in with Google or Microsoft (Outlook).** For now, staff log in with an email and password. This keeps login simple and doesn't depend on any outside company. Adding Google or Microsoft sign-in means setting the app up with each of them and getting it approved, which wasn't needed for a first version. It can easily be added later without changing the rest of the app.
 
 ## Limits
 
