@@ -20,12 +20,13 @@ function check(values: Values, mode: Mode): Errors {
 
 /** Staff log in or create their company's account. Signers never see this page. */
 export default function LoginPage({ onSignedIn, notice = '' }: { onSignedIn: (account: Account) => void; notice?: string }) {
-  // A '/?forgot' link (from an expired reset email) opens straight on the reset request.
-  // The flag is dropped from the address bar once read, so a later log-out doesn't land here again.
+  // A '/?forgot' link (from an expired reset email) opens straight on the reset request, and '/login?signup' (from the
+  // landing page) on account creation. The flag is dropped from the address bar once read, so a later log-out doesn't land here again.
   const [mode, setMode] = useState<Mode>(() => {
-    if (!new URLSearchParams(window.location.search).has('forgot')) return 'login';
-    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
-    return 'forgot';
+    const query = new URLSearchParams(window.location.search);
+    const start = query.has('forgot') ? 'forgot' : query.has('signup') ? 'signup' : 'login';
+    if (start !== 'login') window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    return start;
   });
   const [sent, setSent] = useState('');
   const [created, setCreated] = useState(notice);  // "Account created" (or a notice such as "account deleted"): shown above the login form

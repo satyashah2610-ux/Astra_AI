@@ -3,7 +3,7 @@ import { confirmationLink, emailsTo, PASSWORD, signUp } from './helpers';
 
 test('create a company account, log out, log back in', async ({ page }) => {
   const email = `owner-${Date.now()}@example.com`;
-  await page.goto('/');
+  await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await page.screenshot({ path: 'test-results/auth-login.png', fullPage: true });
   await page.getByRole('button', { name: 'Create an account' }).click();
@@ -42,7 +42,7 @@ test('create a company account, log out, log back in', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Log in to Astra Sign' })).toBeVisible();
   await expect(page.getByText('This confirmation link has already been used or has expired. Log in to continue.')).toBeVisible();
   await page.context().addCookies(session);
-  await page.goto('/');
+  await page.goto('/login');
   await expect(page.getByText('Riverside Builders')).toBeVisible();
   await expect(page.getByRole('button', { name: /signed in as Ana Lopez/i })).toHaveText('AL');
 
@@ -72,7 +72,7 @@ test('another company sees none of your agreements or files', async ({ browser }
   }
   const pdf = await (await a.request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await a.request.post('/api/agreements', { multipart: { file: { name: 'Alpha private.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
-  await b.goto('/');
+  await b.goto('/login');
   await expect(b.getByText('Beta Ltd')).toBeVisible();
   await expect(b.getByText('Your first agreement starts here')).toBeVisible();
   await expect(b.getByText('Alpha private')).toHaveCount(0);
@@ -101,7 +101,7 @@ test('forgot password: request a link, open it from the email, choose a new pass
   // Signed up but never confirmed: the reset link proves the address too, so login works after the reset.
   await page.request.post('/api/auth/signup', { data: { company: 'Forgot Co', name: 'Ana Lopez', email, password: PASSWORD } });
 
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('button', { name: 'Forgot password?' }).click();
   await page.getByLabel('Work email').fill(email);
   await page.getByRole('button', { name: 'Send reset link' }).click();
@@ -138,7 +138,7 @@ test('delete the account from the account menu, after typing the confirmation', 
   const { email } = await signUp(page, 'Delete Me Co');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   const agreement = await (await page.request.post('/api/agreements', { multipart: { file: { name: 'Doomed.pdf', mimeType: 'application/pdf', buffer: pdf } } })).json();
-  await page.goto('/');
+  await page.goto('/login');
   await expect(page.getByText('Delete Me Co')).toBeVisible();
   await page.getByRole('button', { name: /signed in as Pat Tester/i }).click();
   await page.getByRole('menuitem', { name: 'Delete account' }).click();
@@ -161,7 +161,7 @@ test('delete the account from the account menu, after typing the confirmation', 
 test('the account menu is reachable on a narrow screen', async ({ page }) => {
   await signUp(page);
   await page.setViewportSize({ width: 900, height: 900 });
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('button', { name: /signed in as Pat Tester/i }).click();
   await expect(page.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
 });
@@ -169,7 +169,7 @@ test('the account menu is reachable on a narrow screen', async ({ page }) => {
 test('five wrong passwords lock the login for that email', async ({ page }) => {
   const { email } = await signUp(page, 'Lock Co');
   await page.request.post('/api/auth/logout');
-  await page.goto('/');
+  await page.goto('/login');
   for (let attempt = 0; attempt < 5; attempt++) {
     await page.getByLabel('Work email').fill(email);
     await page.getByLabel('Password', { exact: true }).fill('not the password');

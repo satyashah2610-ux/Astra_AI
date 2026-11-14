@@ -213,7 +213,7 @@ def test_signing_emails_the_staff_member_who_sent_it(client, outbox):
     assert client.post("/api/signing/sign", headers=auth(token), json=submission()).status_code == 200
     [notice] = outbox.notices()
     assert notice.to == "ana@riverside.example"
-    assert "Smith kitchen remodel" in notice.text and "http://testserver/" in notice.text
+    assert "Smith kitchen remodel" in notice.text and "http://testserver/login" in notice.text
     events = client.get(f"/api/files/{item['id']}/events").json()
     assert events[-1]["type"] == "signed_notice_sent" and events[-1]["detail"] == "ana@riverside.example"
 

@@ -194,6 +194,14 @@ it('opens on the reset request from a /?forgot link, then removes the flag from 
   window.history.replaceState(null, '', '/');
 });
 
+it('opens on account creation from a /login?signup link, then removes the flag from the address bar', () => {
+  window.history.replaceState(null, '', '/login?signup');
+  render(<LoginPage onSignedIn={vi.fn()} />);
+  expect(screen.getByRole('heading', { name: 'Create your company account' })).toBeInTheDocument();
+  expect(window.location.search).toBe('');
+  window.history.replaceState(null, '', '/');
+});
+
 it('after sign-up, a failed login replaces the "Account created" note, and a shown password is hidden again', async () => {
   render(<LoginPage onSignedIn={vi.fn()} />);
   await userEvent.click(screen.getByRole('button', { name: 'Create an account' }));

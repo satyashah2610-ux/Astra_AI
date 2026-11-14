@@ -9,7 +9,7 @@ test('the company signs its side, checks the details, and watches the client sig
   page.on('pageerror', error => errors.push(error.message));
 
   // Staff: the client's box plus the company's own tick, date and signature.
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await page.request.get('/api/sample-agreement.pdf');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Countersigned agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
@@ -73,7 +73,7 @@ test('the company signs its side, checks the details, and watches the client sig
 });
 
 test('an agreement can be renamed; a taken name gets a number', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Services.pdf', mimeType: 'application/pdf', buffer: pdf });
   await expect(page.getByRole('heading', { name: 'Services', exact: true })).toBeVisible();
@@ -91,7 +91,7 @@ const overlaps = (a: { x: number; y: number; width: number; height: number }, b:
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 test('the signing page: the page box sits beside the tools, and a long name fits the signature preview', async ({ page, context }) => {
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Layout check.pdf', mimeType: 'application/pdf', buffer: pdf });
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
