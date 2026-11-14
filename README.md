@@ -286,19 +286,33 @@ The app runs on **Render** as one Docker container, with a persistent disk for f
 
 ## Features left out, and why
 
+I chose not to integrate AI into Astra Sign. The problem it solves is simple and well defined, and it can be solved completely without AI, so adding it would bring extra cost and complexity for no clear benefit.
+
+A firm sends the same agreement to many clients. Only a few client-specific details change each time, such as the name, dates and fees. The firm's signature and most of the document stay the same. Astra Sign is built around that workflow:
+
+1. Upload the agreement once.
+2. Fill in the details for the new client.
+3. Send it for signing.
+
+The features below were considered and deliberately left out:
+
 1. **AI features.** Agreements often contain sensitive personal and business information (names, prices, contract terms). Until it is agreed what may be shared with a third-party AI provider, all agreement data stays inside the app.
 2. **A document assistant chatbot for clients.** A chatbot on the signing page could explain clauses before the client signs. It needs careful guardrails first:
    - answer only from the document;
    - never give legal advice or invent terms;
    - make clear it is no substitute for reading the agreement;
    - protect the data in the document.
-3. **Automated agreement filling with n8n (future idea).**
-   - **Trigger:** an n8n form where staff upload the agreement.
-   - **Reading:** AI reads it and finds the client-specific details needed (name, email, cost, hours, timelines). What it looks for is set by a general prompt or an agreement-specific one. Prompts written for each customer's own agreements could become a paid offering.
-   - **Asking:** the workflow emails staff for those details. Their reply resumes the workflow through webhooks.
-   - **Sending:** the workflow fills in the agreement and sends it to the client.
-   - **Record:** a spreadsheet keeps a record of each agreement's activity.
-   - **Why it waits:** it depends on the same AI and data-privacy decisions as point 1, and the core signing flow came first.
+3. **Automated agreement filling with n8n.** An n8n workflow could prepare client-specific agreements automatically. I don't think it is needed, but I wanted to share the idea:
+   - **Trigger:** an n8n form where staff upload the agreement template.
+   - **Reading:** AI reads the agreement and identifies the client-specific details it needs, such as the client's name and email, cost, hours and timelines. What it looks for is controlled by a prompt: either one general prompt that works for most agreements, or a prompt written for a specific agreement type. This could later become a paid offering: prompts tailored to each customer's own agreements, so the right details are pulled out for every one of their clients.
+   - **Asking:** the workflow asks staff for those details through the same form. Staff fill in the answers and submit it again.
+   - **Filling:** an HTTP request sends the fields and the contract to an AI model such as ChatGPT or Claude, or a PDF API inside n8n fills them in.
+   - **Review (human in the loop):** before anything goes out, staff receive the filled agreement by email with two buttons. **Approve** continues the workflow and sends it to the client. **Reject**, with a note on what is wrong, stops the workflow, and nothing is sent. Both buttons work through n8n webhooks.
+   - **Record:** every agreement and its status is logged in a spreadsheet, so there is a record of the activity on each client's agreement.
+
+   This would let an agreement be filled and sent with almost no manual work, and I have built similar webhook-based workflows before. I left it out because it depends on the same AI and data-privacy decisions as point 1, and because the core signing flow had to be complete and reliable first.
+
+   Even with this workflow, staff would still have to enter the client-specific details in the n8n form. It would also add the cost of AI services, an n8n subscription and hosting. Entering those details directly in Astra Sign does the same job for free :)
 4. **Load testing.** How the app behaves with, say, 1,000 people at once was not tested. The database is on Neon's free tier, and a realistic load test would use much of its monthly compute allowance and could take the live app offline. Before a real launch, load tests would run on a separate paid staging copy.
 5. **Team features.** Inviting colleagues to a company account, and roles, are not built yet. Each company currently has one login.
 6. **Payments and subscriptions (Stripe).** If the app is taken further, billing would be a subscription model on Stripe:
