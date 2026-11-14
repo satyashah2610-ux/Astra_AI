@@ -17,7 +17,7 @@ test('staff add text and a comment; the client places ticks, dots, text, name, d
   page.on('pageerror', error => errors.push(error.message));
 
   // Staff: a template with company text, a comment and a signature box, made in the editor.
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await page.request.get('/api/sample-agreement.pdf');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Items agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByRole('heading', { name: 'Items agreement', exact: true })).toBeVisible();

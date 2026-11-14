@@ -12,7 +12,7 @@ test('sending a file emails the signer a personal message and a link that opens 
   expect((await page.request.put(`/api/agreements/${agreement.id}/marks`, { data: { marks, version: 0 } })).status()).toBe(200);
 
   const signerEmail = `signer-${Date.now()}@example.com`;
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('tab', { name: 'Files' }).click();
   await page.getByRole('button', { name: 'New file' }).first().click();
   await page.getByLabel('File name or reference').fill('Email job 001');

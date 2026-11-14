@@ -122,5 +122,5 @@ def notify_signed(storage: Storage, sender, file_id: str, base_url: str) -> None
     if row is None:
         return
     email = signed_notice_email(to=row["email"], staff_name=row["name"], signer_name=row["signer_name"],
-                                document_name=row["document_name"], file_title=row["title"], link=f"{base_url}/")
+                                document_name=row["document_name"], file_title=row["title"], link=f"{base_url}/login")
     record_delivery(storage, sender, email, file_id, "signed_notice_sent", "signed_notice_failed")

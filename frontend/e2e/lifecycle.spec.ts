@@ -6,7 +6,7 @@ import { signUp } from './helpers';
 test.beforeEach(async ({ page }) => { await signUp(page); });
 
 async function agreementWithBox(page: Page, name: string) {
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   await page.getByLabel('Upload PDF file').setInputFiles({ name: `${name}.pdf`, mimeType: 'application/pdf', buffer: pdf });
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
@@ -122,7 +122,7 @@ test('draft, edit, search, filter, send, reissue and delete a file', async ({ pa
 });
 
 test('agreements can be found by name', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   for (const name of ['Roofing terms', 'Plumbing terms']) {
     await page.getByLabel('Upload PDF file').setInputFiles({ name: `${name}.pdf`, mimeType: 'application/pdf', buffer: pdf });
@@ -138,7 +138,7 @@ test('agreements can be found by name', async ({ page }) => {
 });
 
 test('staff sign with the name they type, starting from their sign-up name', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await (await page.request.get('/api/sample-agreement.pdf')).body();
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Own name.pdf', mimeType: 'application/pdf', buffer: pdf });
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();

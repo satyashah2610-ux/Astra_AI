@@ -18,7 +18,7 @@ test('real PDF upload, draw, move, resize, save, reopen and remove', async ({ pa
   const request = page.request;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await request.get('/api/sample-agreement.pdf');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Browser test agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByRole('heading', { name: 'Browser test agreement', exact: true })).toBeVisible();
@@ -68,7 +68,7 @@ test('real PDF upload, draw, move, resize, save, reopen and remove', async ({ pa
 });
 
 test('sample button, unsaved-change guard, multiple pages, keyboard and mobile layout', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('button', { name: 'Try a sample agreement', exact: true }).click();
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Select and move fields' })).toHaveCount(0);
@@ -102,13 +102,13 @@ test('sample button, unsaved-change guard, multiple pages, keyboard and mobile l
 });
 
 test('a malformed PDF displays an actionable error', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'broken.pdf', mimeType: 'application/pdf', buffer: Buffer.from('not a PDF') });
   await expect(page.getByRole('alert')).toContainText('valid PDF');
 });
 
 test('draws consecutive boxes and selects an existing box without changing tools', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('button', { name: 'Try a sample agreement', exact: true }).click();
   await expect(page.getByTestId('pdf-overlay')).toBeVisible();
   await draw(page, { x: .1, y: .2 }, { x: .4, y: .28 });
@@ -126,7 +126,7 @@ test('draws consecutive boxes and selects an existing box without changing tools
 
 test('Astra Sign branding and confirmed deletion persist after reload', async ({ page }) => {
   const request = page.request;
-  await page.goto('/');
+  await page.goto('/login');
   await expect(page).toHaveTitle('Astra Sign — Agreements');
   await expect(page.getByRole('link', { name: 'Astra Sign', exact: true })).toBeVisible();  // the logo only
   const pdf = await request.get('/api/sample-agreement.pdf');
@@ -153,7 +153,7 @@ test('Astra Sign branding and confirmed deletion persist after reload', async ({
 
 test('duplicate uploads show numbered names in the library and editor after reload', async ({ page }) => {
   const request = page.request;
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await request.get('/api/sample-agreement.pdf');
   const file = { name: 'Repeated agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() };
   for (const name of ['Repeated agreement', 'Repeated agreement (1)', 'Repeated agreement (2)']) {

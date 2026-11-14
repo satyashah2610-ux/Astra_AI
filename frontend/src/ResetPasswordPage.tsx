@@ -43,7 +43,7 @@ export default function ResetPasswordPage({ token }: { token: string }) {
       {brand}
       <h1 id="reset-title">Password reset</h1>
       <p className="auth-intro sent-note" role="status">{done}</p>
-      <a className="primary auth-submit" href="/"><LogIn size={16} />Go to log in</a>
+      <a className="primary auth-submit" href="/login"><LogIn size={16} />Go to log in</a>
     </section>
   </div>;
 

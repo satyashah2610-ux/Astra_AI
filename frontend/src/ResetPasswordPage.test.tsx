@@ -52,7 +52,7 @@ it('saves the new password with the token from the link, then sends them to log 
   await userEvent.click(screen.getByRole('button', { name: 'Save new password' }));
   expect(await screen.findByRole('heading', { name: 'Password reset' })).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Your password has been reset. Log in with your new password.');
-  expect(screen.getByRole('link', { name: 'Go to log in' })).toHaveAttribute('href', '/');
+  expect(screen.getByRole('link', { name: 'Go to log in' })).toHaveAttribute('href', '/login');
   expect(screen.queryByLabelText('New password', { exact: true })).not.toBeInTheDocument();
   expect(calls).toEqual([{ url: '/api/auth/reset', body: { token, password: 'a brand new passphrase' } }]);
   expect(window.location.hash).toBe('');  // the used link leaves the address bar (and a reload doesn't show the form again)

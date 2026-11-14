@@ -1,27 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CloudOff, Loader2, RotateCcw } from 'lucide-react';
 import App from './App';
+import Landing from './Landing';
 import LoginPage from './LoginPage';
 import { ApiError, LOGGED_OUT_EVENT } from './api';
 import { authApi, type Account } from './auth';
 import { IDLE_NOTICE, useIdleLogout } from './idle';
 
-type State = Account | 'checking' | 'logged-out' | 'unreachable';
+type State = Account | 'checking' | 'landing' | 'logged-out' | 'unreachable';
 
-/** The staff workspace, shown only to a logged-in user; everyone else gets the login page. */
-export default function StaffGate({ notice: initialNotice = '' }: { notice?: string }) {
+/** The staff workspace, shown only to a logged-in user; everyone else gets the login page. With `landing`, a visitor who
+ * arrives logged out sees the landing page instead; logging out later always returns to the login page. */
+export default function StaffGate({ notice: initialNotice = '', landing = false }: { notice?: string; landing?: boolean }) {
   const [state, setState] = useState<State>('checking');
   const [notice, setNotice] = useState(initialNotice);  // shown on the login page, e.g. after deleting the account
-  const loggedOut = useCallback(() => setState('logged-out'), []);
-  const sessionEnded = useCallback(() => { setNotice('Your session has ended. Log in again to continue.'); setState('logged-out'); }, []);
+  // After a log-out the login form belongs at /login: at / a refresh would show the landing page instead.
+  const loggedOut = useCallback(() => { if (window.location.pathname === '/') window.history.replaceState(null, '', '/login'); setState('logged-out'); }, []);
+  const sessionEnded = useCallback(() => { setNotice('Your session has ended. Log in again to continue.'); loggedOut(); }, [loggedOut]);
 
   const check = useCallback(() => {
     setState('checking');
     authApi.me().then(setState).catch(error => {
       // Only "not logged in" means log in; an outage must not look like a lost account.
-      setState(error instanceof ApiError && error.status === 401 ? 'logged-out' : 'unreachable');
+      setState(error instanceof ApiError && error.status === 401 ? (landing ? 'landing' : 'logged-out') : 'unreachable');
     });
-  }, []);
+  }, [landing]);
 
   useEffect(() => {
     check();
@@ -29,7 +32,13 @@ export default function StaffGate({ notice: initialNotice = '' }: { notice?: str
     return () => window.removeEventListener(LOGGED_OUT_EVENT, sessionEnded);
   }, [check, sessionEnded]);
 
+  const signedIn = typeof state === 'object';
+  useEffect(() => {  // the workspace lives at /, not at the login address
+    if (signedIn && /^\/login\/?$/.test(window.location.pathname)) window.history.replaceState(null, '', '/');
+  }, [signedIn]);
+
   if (state === 'checking') return <div className="auth-shell"><p className="loading"><Loader2 className="spin" size={18} />Loading…</p></div>;
+  if (state === 'landing') return <Landing />;
   if (state === 'unreachable') return <div className="auth-shell"><div className="auth-card outage" role="alert">
     <CloudOff size={28} />
     <h1>Can’t reach Astra Sign</h1>

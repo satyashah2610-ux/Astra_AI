@@ -20,7 +20,7 @@ test('the whole loop in the UI: prepare, create and send, client signs, staff do
   page.on('pageerror', error => errors.push(error.message));
 
   // Staff prepare the agreement.
-  await page.goto('/');
+  await page.goto('/login');
   const pdf = await page.request.get('/api/sample-agreement.pdf');
   await page.getByLabel('Upload PDF file').setInputFiles({ name: 'Loop agreement.pdf', mimeType: 'application/pdf', buffer: await pdf.body() });
   await expect(page.getByRole('heading', { name: 'Loop agreement', exact: true })).toBeVisible();
@@ -72,7 +72,7 @@ test('the whole loop in the UI: prepare, create and send, client signs, staff do
 
 test('the Files screen works on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('tab', { name: 'Files' }).click();
   await page.getByRole('button', { name: 'New file' }).first().click();
   await expect(page.getByLabel('Signer email')).toBeVisible();
@@ -81,7 +81,7 @@ test('the Files screen works on a phone', async ({ page }) => {
 });
 
 test('the status filters fit on one line beside the file list', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('tab', { name: 'Files' }).click();
   const filters = page.getByRole('group', { name: 'Filter by status' }).getByRole('button');
   await expect(filters).toHaveText(['All', 'Draft', 'Sent', 'Viewed', 'Signed']);
@@ -98,7 +98,7 @@ test('a new file for an earlier client fills the client, signer and email from a
   const earlier = { title: 'Patel kitchen', client_name: 'Patel Family', signer_name: 'Smit Patel', signer_email: 'smit@example.com', agreement_id: agreement.id };
   expect((await page.request.post('/api/files', { data: earlier })).status()).toBe(201);
 
-  await page.goto('/');
+  await page.goto('/login');
   await page.getByRole('tab', { name: 'Files' }).click();
   await page.getByRole('button', { name: 'New file' }).first().click();
   await page.getByLabel('Client name').fill('pat');

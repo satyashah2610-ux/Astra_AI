@@ -273,3 +273,18 @@
 - Under "Email the link to the signer", a second box, "Remind them every day for up to 7 days if it isn't signed", ticked by default. Without the email it is greyed out, as is the personal message (only sent in the email; dropped when sending without it). Same choice on a draft and when reissuing a link.
 - Earlier timelines are corrected by migration 0011: a send no email followed becomes "Link created".
 - Code review (9 findings): fixed 4. "Shared by you" claimed sharing that might not have happened, also appeared when email was asked for but couldn't go out, and disagreed with the certificate; it is now "Link created, not emailed" everywhere. A message typed before unticking the email was kept and could go out in a later emailed reissue; it is now dropped. The reminder decision is one helper. Three signing tests updated (without email set up, the link is now correctly "link_created"). Left: the message can't be typed for a draft while the email box is unticked (tick it to type); a reissue says "Link reissued" whichever way it went (an email is followed by "Email sent"); an email still queued when migration 0011 runs could be relabelled (seconds-wide window during a deploy); the event labels are kept in both the frontend and the certificate.
+
+## 2026-11-14 - Landing page
+- Full design: [docs/design/21-landing-page.md](docs/design/21-landing-page.md). A logged-out visitor at `/` now sees a public landing page. The login form moves to `/login`, and `/login?signup` opens account creation. A logged-in user at `/` still goes straight to the workspace, and logging out still returns to the login form. `/?forgot` from reset emails still opens the reset request. Browser tests that logged in from `/` now open `/login`.
+- The "video" of a file's history is an in-page animated clip with play/pause, not a recording. It stays sharp, it's tiny, it's testable, and it uses the app's own timeline labels so it can't drift out of date. It respects reduced motion.
+- The landing page uses gradients, glow and motion that the app itself avoids (design 13). The styles sit in a separate `landing.css` with an `lp-` prefix so the app is untouched.
+- No testimonials, customer logos or usage figures: none exist yet. Every claim on the page matches a built feature.
+- Revised after review: wider layout (up to 1560 px) with less empty space at the sides. Section links scroll on the first click: they used to change the `#fragment`, which reloads the page (`main.tsx`), so they now scroll in script. "See it in action" was removed. The page was reworked with the frontend-design guidance: one bold hero (a pen stroke under "signed." and a demo window that tilts toward the mouse), quiet ruled sections, and Security set as a certificate of completion. Generic patterns (gradient phrase, uppercase labels, stats strip, card grid, fade-in on every section) were removed. Hover states are on every interactive element.
+- Code review (10 findings), all fixed:
+  - Logging out at `/` now moves the address to `/login`, so a refresh shows the login form rather than the landing page.
+  - Only `?forgot` skips the landing page; tracking parameters such as `?utm_source` no longer do.
+  - Root takes `search` as a prop instead of reading the global location.
+  - The `/login` to `/` rewrite runs in an effect, not during render, and accepts `/login/`.
+  - The demo's step counter is no longer announced to screen readers every 1.8 s.
+  - The tilt handler checks reduced motion before measuring.
+  - A redundant condition is removed, and the scroll test's stub is restored.
