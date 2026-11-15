@@ -142,26 +142,40 @@ On the [live app](https://app.signwithastra.com):
 
 ```
 backend/
-  app/                FastAPI app
-    main.py           app setup, routes for agreements and the web pages
-    auth.py           sign-up, login, sessions, password reset, account deletion
-    files.py          files: create, edit, send, reissue, delete, timeline
-    signing.py        the public signing API (link secret in a header)
-    signed_pdf.py     stamping items into the PDF and building the certificate
-    reminders.py      the reminder loop and the "signed" email
-    security.py       host allow-list, cross-site checks, body size limits, headers
-    email.py          email content and sending through Resend
-    schema/           numbered SQL migrations
-  tests/              pytest unit and integration tests
-  scripts/            helper to start the backend for end-to-end tests
+  app/                    FastAPI app
+    main.py               app setup, PDF upload checks, routes for agreements and the web pages
+    auth.py               sign-up, login, sessions, email confirmation, password reset, account deletion
+    files.py              files: create, edit, send, reissue, delete, timeline; the SHA-256 of the sent PDF
+    signing.py            the public signing API (link secret in a header)
+    signatures.py         checks the signature image a client submits
+    signed_pdf.py         stamping items into the PDF and building the certificate (ReportLab + pypdf)
+    signed_documents.py   builds each signed PDF once, then always serves the same file
+    lifecycle.py          file status rules: draft, sent, viewed, signed
+    events.py             the append-only timeline, with IP address and browser for each event
+    tokens.py             signing-link secrets; only their SHA-256 is stored
+    links.py              the app's own address, for links in emails
+    reminders.py          the reminder loop and the "signed" email
+    email.py              email content and sending through Resend
+    email_limit.py        daily limits on signing and reminder emails per company
+    security.py           host allow-list, cross-site checks, body size limits, headers
+    models.py             request shapes and validation (boxes, files, signing, sign-up, login)
+    naming.py             unique agreement names: "Agreement (1)", "Agreement (2)"
+    sample.py             the fictional sample agreement
+    settings.py           configuration from environment variables and .env files
+    storage.py            where PDFs, signatures and signed files are saved
+    database.py           PostgreSQL connection pool and the app-wide write lock
+    migrations.py         applies the numbered SQL migrations once, in order
+    schema/               numbered SQL migrations
+  tests/                  pytest unit and integration tests
+  scripts/                helper to start the backend for end-to-end tests
 frontend/
-  src/                React app: App (agreements), FilesPage, SigningPage, PdfEditor, PdfPages, SignaturePad, ...
-  src/*.test.tsx      Vitest unit tests
-  e2e/                Playwright end-to-end tests
-docs/design/          one design note per feature
-examples/             sample agreement PDF
-Decisions.md          every design decision and the reason for it
-Dockerfile            the production container
+  src/                    React app: Landing, App (agreements), FilesPage, SigningPage, PdfEditor, PdfPages, SignaturePad, ...
+  src/*.test.tsx          Vitest unit tests
+  e2e/                    Playwright end-to-end tests
+docs/design/              one design note per feature
+examples/                 sample agreement PDF
+Decisions.md              every design decision and the reason for it
+Dockerfile                the production container
 ```
 
 ## Run it locally
