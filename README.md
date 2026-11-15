@@ -266,9 +266,9 @@ Open **http://127.0.0.1:5173**. The backend creates its tables on first start. W
 
 | Kind | Count | Tool | What it checks |
 |---|---|---|---|
-| Backend unit and integration | about 620 | pytest | API rules, permissions, company isolation, links, reminders, emails, PDF stamping, migrations, security checks |
-| Frontend unit | 211 | Vitest | Every screen and component in a simulated browser |
-| End-to-end | 29 | Playwright | The whole app in real Chrome, from sign-up to the signed PDF, including phone layouts |
+| Backend unit and integration | 631 | pytest | API rules, permissions, company isolation, links, reminders, emails, PDF stamping, migrations, security checks |
+| Frontend unit | 231 | Vitest | Every screen and component in a simulated browser |
+| End-to-end | 32 | Playwright | The whole app in real Chrome, from sign-up to the signed PDF, including phone layouts and the landing page |
 
 All tests use a **separate test database**, never the app's own. Put its direct (non-pooled) URL in `.env.test.local` (git-ignored):
 
