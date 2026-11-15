@@ -237,6 +237,43 @@ Open **http://127.0.0.1:5173**. The backend creates its tables on first start. W
   - finished signed PDFs.
 - **Backups:** back up the database and that folder together.
 
+### Database schema
+
+15 tables in PostgreSQL (on Neon). Everything hangs off two objects: the **company** and the **file**.
+
+```
+organizations (the company)
+├── users ─────────── sessions, password_resets, email_confirmations
+├── agreements (templates)
+└── files (one per client job) ── uses an agreement
+     ├── file_events     (the timeline)
+     ├── signatures      (the client's signature details)
+     ├── signer_items    (ticks, dots, text, initials the client added)
+     └── signing_links   (extra links sent in reminders)
+```
+
+| Group | Table | What it holds |
+|---|---|---|
+| Company and login | `organizations` | Each company that signs up |
+| | `users` | Staff logins: name, email, password hash, when the email was confirmed |
+| | `sessions` | Logged-in sessions (only a hash of the cookie) and last activity, for the idle logout |
+| | `email_confirmations` | "Confirm your email" links (hashes only) |
+| | `password_resets` | "Reset your password" links (hashes only) |
+| | `login_failures` | Wrong-password attempts, for the lockout |
+| The product | `agreements` | Templates: name, page count, and the positions of their boxes and items |
+| | `files` | One per client job: client, signer, email, status, SHA-256 of the sent PDF, link hash, reminder schedule |
+| | `file_events` | The timeline: every event with its time, IP address and browser |
+| | `signatures` | The signature: name, drawn or typed, time, IP, browser, consent wording, image hash |
+| | `signer_items` | Everything else the client added: ticks, dots, text, initials |
+| | `signing_links` | Fresh links sent in reminders (hashes only) |
+| Abuse limits | `password_reset_requests` | Reset requests, limited per email and per IP address |
+| | `signing_emails` | Emails sent per company, for the daily sending limits |
+| Bookkeeping | `schema_migrations` | Which schema changes have been applied |
+
+- **Companies are kept apart:** every agreement and file belongs to one company (`organization_id`), and every staff query filters by it.
+- **Schema changes:** 11 numbered SQL files in [backend/app/schema/](backend/app/schema/) (`0001_initial.sql` to `0011_link_created.sql`) run once, in order, when the app starts, so features were added without losing data.
+- **Not in the database:** PDFs and signature images live on disk. The database keeps only their details and hashes.
+
 ## Security
 
 - **Accounts:**
@@ -285,6 +322,17 @@ npm.cmd --prefix frontend run test:e2e                  # end-to-end tests in re
 ```
 
 The end-to-end tests build the app, start their own backend and frontend (ports 8011 and 5174), write emails to a temporary folder instead of sending them, and drive Google Chrome. Screenshots and traces of any failure go to `frontend/test-results/`.
+
+### Claude Code skills used
+
+The app was built with Claude Code, using these skills and rules:
+
+| Skill | What it was used for |
+|---|---|
+| **`/code-review`** | Reviewed every change for bugs before it was pushed to `dev`. Findings and fixes are recorded in [Decisions.md](Decisions.md). |
+| **`/security-review`** | Reviewed every release for vulnerabilities before it was merged to `main`. |
+| **Andrej Karpathy coding guidelines** ([CLAUDE.md](CLAUDE.md)) | Rules based on Andrej Karpathy's observations of common LLM coding mistakes: think before coding, keep it simple, make surgical changes, and define success with tests. The same file adds this project's own rules: test-first, reviews before release, no secrets in code. |
+| **`frontend-design`** | Guided the landing page design: one bold hero moment, the app's own palette and type, and avoiding generic template patterns. |
 
 ## Hosting
 
